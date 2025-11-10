@@ -1,0 +1,23 @@
+alembic==1.17.1
+boto3==1.40.68
+fastapi==0.121.0
+passlib==1.7.4
+psycopg2-binary==2.9.11
+pydantic==2.12.4
+pydantic_core==2.41.5
+pydantic-settings==2.11.0
+python-dotenv==1.2.1
+python-jose==3.5.0
+python-multipart==0.0.20
+uvicorn==0.38.0
+SQLAlchemy==2.0.32
+pydantic[email]==2.12.4
+rio-cogeo==5.3.3
+rasterio==1.4.3
+rio-tiler==7.9.2
+numpy==1.26.4
+
+# Note: GDAL must be installed at system level before installing Python packages
+# Ubuntu/Debian: sudo apt-get install gdal-bin python3-gdal
+# macOS: brew install gdal
+# The system GDAL installation provides gdal_translate, gdaladdo, and gdal2tiles.py

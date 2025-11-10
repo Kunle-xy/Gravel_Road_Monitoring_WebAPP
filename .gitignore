@@ -1,0 +1,103 @@
+# ============================================
+# CRITICAL SECURITY - Secrets & Credentials
+# ============================================
+# Environment files
+.env
+.env.*
+*.env
+FastAPI/.env
+webapp/.env*
+
+# Credentials and keys  
+*.key
+*.pem
+*.cert
+*.crt
+credentials.json
+credentials/
+secrets/
+*secret*
+*password*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# Python / FastAPI
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ============================================
+# Node.js / Next.js / React
+# ============================================
+node_modules/
+.next/
+out/
+build/
+.pnp
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
+
+# ============================================
+# IDEs & Editors
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================
+# Logs & Temp
+# ============================================
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+*.bak
+
+# ============================================
+# Testing & Coverage
+# ============================================
+/coverage
+.coverage
+htmlcov/
+
+# ============================================
+# AWS & Cloud
+# ============================================
+.aws/
+
+# ============================================
+# Project Specific
+# ============================================
+# Keep .gitignore folder (contains documentation)
+# .gitignore/ folder is intentional
+
+# Uploads (if storing locally)
+uploads/
+upload/

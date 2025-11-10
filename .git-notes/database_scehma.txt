@@ -1,0 +1,138 @@
+# ============================================
+# PostgreSQL Setup for Gravel Road Iowa
+# Run these commands step by step
+# ============================================
+
+# Step 1: Connect to PostgreSQL as postgres user
+sudo -u postgres psql
+
+# ============================================
+# Now you're inside psql. Run these SQL commands:
+# (Remember the semicolons!)
+# ============================================
+
+# Step 2: Create database
+CREATE DATABASE gravel_road_app;
+
+# Step 3: List databases (verify it was created)
+\l
+
+# Step 4: Create user with password
+CREATE USER gravel_admin WITH PASSWORD 'your_strong_password_here';
+
+# Step 5: Grant all privileges on the database
+GRANT ALL PRIVILEGES ON DATABASE gravel_road_app TO gravel_admin;
+
+# Step 6: Connect to your new database
+\c gravel_road_app
+
+# Step 7: Grant schema privileges
+GRANT ALL ON SCHEMA public TO gravel_admin;
+
+# Step 8: Enable UUID extension (needed for our schema)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+# Step 9: Now paste your table creation SQL
+# (The users and tiff_files tables from earlier)
+
+-- Create users table
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    organization VARCHAR(255),
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP WITH TIME ZONE
+);
+
+-- Create indexes
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_created_at ON users(created_at);
+
+-- Create tiff_files table
+CREATE TABLE tiff_files (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    original_size_bytes BIGINT NOT NULL,
+    s3_bucket VARCHAR(255) NOT NULL,
+    s3_key VARCHAR(500) NOT NULL,
+    s3_url TEXT,
+    upload_status VARCHAR(50) DEFAULT 'pending',
+    upload_progress INTEGER DEFAULT 0,
+    upload_completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes
+CREATE INDEX idx_tiff_files_user_id ON tiff_files(user_id);
+CREATE INDEX idx_tiff_files_file_type ON tiff_files(file_type);
+CREATE INDEX idx_tiff_files_upload_status ON tiff_files(upload_status);
+CREATE INDEX idx_tiff_files_created_at ON tiff_files(created_at);
+
+-- Create trigger function for auto-updating updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply triggers
+CREATE TRIGGER update_users_updated_at 
+    BEFORE UPDATE ON users
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_tiff_files_updated_at 
+    BEFORE UPDATE ON tiff_files
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Step 10: Verify tables were created
+\dt
+
+-- Step 11: Describe tables to see structure
+\d users
+\d tiff_files
+
+-- Step 12: Grant table privileges to gravel_admin
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO gravel_admin;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO gravel_admin;
+
+-- Step 13: Insert a test user (optional)
+INSERT INTO users (email, password_hash, first_name, last_name, organization)
+VALUES (
+    'test@example.com',
+    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqNGkrpXK6',
+    'Test',
+    'User',
+    'Iowa State University'
+);
+
+-- Step 14: Verify test user was created
+SELECT email, first_name, last_name, created_at FROM users;
+
+-- Step 15: Exit psql
+\q
+
+# ============================================
+# Back in terminal - Update your .env file
+# ============================================
+
+# Edit your backend/.env file with this connection string:
+DATABASE_URL=postgresql://gravel_admin:your_strong_password_here@localhost:5432/gravel_road_app
+
+# ============================================
+# Test connection from Python
+# ============================================
+
+# Create a test file: test_db.py
+# Then run: python test_db.py
