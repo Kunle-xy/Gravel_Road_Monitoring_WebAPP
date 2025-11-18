@@ -49,4 +49,14 @@ export const API_ENDPOINTS = {
     UPLOAD: '/upload/',
     DELETE: (fileId: string) => `/upload/${fileId}`,
   },
+  FOLDERS: {
+    LIST: '/folders/',
+    LIST_WITH_FILES: '/folders/with-files',
+    CREATE: '/folders/',
+    GET: (folderId: string) => `/folders/${folderId}`,
+    UPDATE: (folderId: string) => `/folders/${folderId}`,
+    DELETE: (folderId: string) => `/folders/${folderId}`,
+    ADD_FILE: (folderId: string, fileId: string) => `/folders/${folderId}/files/${fileId}`,
+    REMOVE_FILE: (folderId: string, fileId: string) => `/folders/${folderId}/files/${fileId}`,
+  },
 } as const;

@@ -33,9 +33,34 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
+class FolderCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    color: Optional[str] = "#3b82f6"
+
+class FolderUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    is_expanded: Optional[bool] = None
+
+class FolderResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    name: str
+    description: Optional[str]
+    color: str
+    is_expanded: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
 class TiffFileResponse(BaseModel):
     id: uuid_lib.UUID
     user_id: uuid_lib.UUID
+    folder_id: Optional[uuid_lib.UUID] = None
     filename: str
     file_type: str
     original_size_bytes: int
@@ -69,3 +94,17 @@ class TiffFileResponse(BaseModel):
 class TiffFileListResponse(BaseModel):
     total: int
     files: List[TiffFileResponse]
+
+class FolderWithFilesResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    name: str
+    description: Optional[str]
+    color: str
+    is_expanded: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+    files: List[TiffFileResponse]
+
+    class Config:
+        from_attributes = True

@@ -12,7 +12,7 @@ import aiofiles
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.models import User, TiffFile
+from app.models import User, TiffFile, Folder
 from app.schemas import TiffFileResponse
 from app.auth import get_current_active_user
 from app.config import settings
@@ -146,6 +146,7 @@ def upload_to_s3(bucket: str, key: str, data: bytes, content_type: str = 'image/
 async def upload_file(
     file: UploadFile = File(...),
     file_type: str = Form(...),
+    folder_id: str = Form(None),  # Optional folder ID
     convert_cog: bool = Form(True),  # Convert to COG by default
     generate_tiles: bool = Form(True),  # Generate static tiles by default
     current_user: User = Depends(get_current_active_user),
@@ -162,6 +163,27 @@ async def upload_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only TIFF files allowed"
         )
+
+    # Validate folder_id if provided
+    folder_uuid = None
+    if folder_id:
+        try:
+            folder_uuid = uuid.UUID(folder_id)
+            # Verify folder exists and belongs to user
+            folder = db.query(Folder).filter(
+                Folder.id == folder_uuid,
+                Folder.user_id == current_user.id
+            ).first()
+            if not folder:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Folder not found"
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid folder_id format"
+            )
 
     s3_key = generate_s3_key(str(current_user.id), file.filename, file_type)
 
@@ -205,6 +227,7 @@ async def upload_file(
         # Initialize database record
         db_file = TiffFile(
             user_id=current_user.id,
+            folder_id=folder_uuid,  # Associate with folder if provided
             filename=file.filename,
             file_type=file_type.upper(),
             original_size_bytes=file_size,

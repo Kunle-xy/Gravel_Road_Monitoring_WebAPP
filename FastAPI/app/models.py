@@ -7,7 +7,7 @@ from app.database import Base
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
@@ -18,14 +18,31 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     last_login = Column(DateTime(timezone=True))
-    
+
     tiff_files = relationship("TiffFile", back_populates="user")
+    folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan")
+
+class Folder(Base):
+    __tablename__ = "folders"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    color = Column(String(7), default="#3b82f6")  # Hex color for folder display
+    is_expanded = Column(Boolean, default=True)  # Track expand/collapse state
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", back_populates="folders")
+    tiff_files = relationship("TiffFile", back_populates="folder")
 
 class TiffFile(Base):
     __tablename__ = "tiff_files"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
     filename = Column(String(255), nullable=False)
     file_type = Column(String(50), nullable=False)
     original_size_bytes = Column(BigInteger, nullable=False)
@@ -59,3 +76,4 @@ class TiffFile(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="tiff_files")
+    folder = relationship("Folder", back_populates="tiff_files")
