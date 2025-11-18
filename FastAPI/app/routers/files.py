@@ -11,7 +11,6 @@ from app.models import User, TiffFile
 from app.schemas import TiffFileResponse, TiffFileListResponse
 from app.auth import get_current_active_user
 from app.config import settings
-from app.job_manager import submit_tile_generation_job
 
 router = APIRouter(prefix="/files", tags=["Files"])
 

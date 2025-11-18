@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import auth, files, upload, tiles, tiles_status
-from app.job_manager import shutdown_executor
 import logging
 
 # Configure logging
@@ -21,7 +20,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=[
+        settings.FRONTEND_URL,
+        "http://172.29.50.232:3000",  # WSL2 IP for Windows browser access
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,8 +49,7 @@ async def startup_event():
 async def shutdown_event():
     """Application shutdown - cleanup resources"""
     logger.info("Shutting down Gravel Road API")
-    shutdown_executor()
-    logger.info("Thread pool executor shutdown complete")
+    logger.info("Celery workers will continue processing tasks")
 
 
 @app.get("/")

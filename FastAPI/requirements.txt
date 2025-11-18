@@ -17,7 +17,16 @@ rasterio==1.4.3
 rio-tiler==7.9.2
 numpy==1.26.4
 
+# Celery for distributed task processing
+celery==5.4.0
+redis==5.2.1  # Redis client for Celery broker/backend
+
 # Note: GDAL must be installed at system level before installing Python packages
 # Ubuntu/Debian: sudo apt-get install gdal-bin python3-gdal
 # macOS: brew install gdal
 # The system GDAL installation provides gdal_translate, gdaladdo, and gdal2tiles.py
+
+# Note: Redis server must be installed and running for Celery
+# Ubuntu/Debian: sudo apt-get install redis-server
+# macOS: brew install redis
+# Start Redis: redis-serveraiofiles==25.1.0

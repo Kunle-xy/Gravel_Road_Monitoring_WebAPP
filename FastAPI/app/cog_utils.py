@@ -50,6 +50,8 @@ def convert_to_cog(
     # Create temporary file for input
     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp_input:
         tmp_input.write(input_data)
+        tmp_input.flush()  # Flush Python buffer to OS
+        os.fsync(tmp_input.fileno())  # Force OS to write to disk
         tmp_input_path = tmp_input.name
 
     try:

@@ -4,13 +4,14 @@ Tile Generation Status and Management Endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import logging
 
 from app.database import get_db
 from app.models import User, TiffFile
 from app.auth import get_current_active_user
-from app.job_manager import submit_tile_generation_job
+from app.workers.tile_worker import generate_tiles_task
+from app.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,20 @@ async def get_tile_generation_status(
             detail="File not found"
         )
 
+    # Check Celery task status if available
+    celery_task_status: Optional[dict] = None
+    try:
+        task_id = f"tile_{file_id}"
+        task_result = celery_app.AsyncResult(task_id)
+        if task_result:
+            celery_task_status = {
+                "task_id": task_id,
+                "state": task_result.state,
+                "info": task_result.info if task_result.info else None
+            }
+    except Exception as e:
+        logger.warning(f"Failed to get Celery task status: {e}")
+
     return {
         "file_id": str(file.id),
         "filename": file.filename,
@@ -53,7 +68,8 @@ async def get_tile_generation_status(
         "tile_error": file.tile_error,
         "tiles_generated_at": file.tiles_generated_at,
         "min_zoom": file.tile_min_zoom,
-        "max_zoom": file.tile_max_zoom
+        "max_zoom": file.tile_max_zoom,
+        "celery_task": celery_task_status
     }
 
 
@@ -98,10 +114,16 @@ async def retry_tile_generation(
         )
 
     try:
-        # Submit tile generation job
-        submit_tile_generation_job(
-            file_id=str(file.id),
-            s3_key=file.cog_s3_key
+        # Submit Celery tile generation task
+        task = generate_tiles_task.apply_async(
+            args=[
+                str(file.id),
+                file.s3_bucket,
+                file.cog_s3_key,
+                15,  # min_zoom
+                21   # max_zoom
+            ],
+            task_id=f"tile_{file.id}"
         )
 
         # Update status
@@ -110,19 +132,20 @@ async def retry_tile_generation(
         file.tile_error = None
         db.commit()
 
-        logger.info(f"Tile generation retry submitted for file {file.id}")
+        logger.info(f"Celery task {task.id} submitted for retry on file {file.id}")
 
         return {
-            "message": "Tile generation job submitted",
+            "message": "Tile generation task submitted",
             "file_id": str(file.id),
+            "task_id": task.id,
             "tile_status": "queued"
         }
 
     except Exception as e:
-        logger.error(f"Failed to submit retry job: {e}")
+        logger.error(f"Failed to submit Celery task: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to submit job: {str(e)}"
+            detail=f"Failed to submit task: {str(e)}"
         )
 
 

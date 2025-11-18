@@ -1,0 +1,188 @@
+"use client";
+
+import { useState, useEffect } from 'react';
+import { Trash2, CheckSquare, Square, Loader2 } from 'lucide-react';
+import { useMap } from '../../contexts/MapContext';
+
+interface TiffFileItemProps {
+  file: {
+    id: string;
+    filename: string;
+    file_type: string;
+    original_size_bytes: number;
+    bounds_south?: string;
+    bounds_west?: string;
+    bounds_north?: string;
+    bounds_east?: string;
+    tile_status?: string;
+    tile_url_template?: string;
+    tile_error?: string;
+    tile_progress?: number;
+  };
+  onDelete: (fileId: string, filename: string) => void;
+}
+
+export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
+  const { map, addLayer, toggleLayer, isLayerVisible, allLayers } = useMap();
+  const [initializing, setInitializing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const checked = isLayerVisible(file.id);
+  const layerExists = allLayers.has(file.id);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  // Pre-create layer when component mounts and map is ready
+  useEffect(() => {
+    if (!map || layerExists) return;
+
+    // Check if tiles are ready
+    if (file.tile_status !== 'completed') {
+      const statusMessage =
+        file.tile_status === 'processing' ? `Generating tiles (${file.tile_progress || 0}%)` :
+        file.tile_status === 'failed' ? `Tile generation failed: ${file.tile_error || 'Unknown error'}` :
+        file.tile_status === 'queued' ? 'Waiting to generate tiles...' :
+        'Tiles not ready';
+
+      console.warn(`File ${file.filename} tiles not ready - status: ${file.tile_status}`);
+      setError(statusMessage);
+      setInitializing(false); // Ensure spinner stops
+      return;
+    }
+
+    // Check if bounds are available
+    if (!file.bounds_south || !file.bounds_west || !file.bounds_north || !file.bounds_east) {
+      console.warn(`File ${file.filename} missing bounds - upload may be in progress`);
+      setError('Bounds not available');
+      setInitializing(false); // Ensure spinner stops
+      return;
+    }
+
+    let cancelled = false; // Prevent state updates if component unmounts
+
+    const initializeLayer = async () => {
+      setInitializing(true);
+      setError(null);
+
+      try {
+        // Dynamically import Leaflet
+        const L = (await import('leaflet')).default;
+
+        // Use the pre-generated static tile URL directly from the file record
+        const tileUrl = file.tile_url_template;
+
+        if (!tileUrl) {
+          throw new Error('No tile URL available');
+        }
+
+        if (cancelled) return; // Don't continue if component unmounted
+
+        // Create simple tile layer - no authentication needed for CloudFront
+        const layer = new L.TileLayer(tileUrl, {
+          opacity: 0.8,
+          maxZoom: 26,
+          minZoom: 1,
+          attribution: file.filename,
+          crossOrigin: 'anonymous',
+          tileSize: 256,
+          keepBuffer: 2,
+          updateWhenIdle: false,
+          updateWhenZooming: true
+        });
+
+        // Parse bounds from database (already validated they exist above)
+        const bounds: [[number, number], [number, number]] = [
+          [parseFloat(file.bounds_south!), parseFloat(file.bounds_west!)],
+          [parseFloat(file.bounds_north!), parseFloat(file.bounds_east!)]
+        ];
+
+        // Register layer with context (doesn't show it yet)
+        addLayer(file.id, file.filename, file.file_type, layer, bounds);
+
+        if (!cancelled) {
+          console.log(`Layer pre-created for ${file.filename}`);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to initialize layer:', err);
+          setError(err instanceof Error ? err.message : 'Failed to initialize');
+        }
+      } finally {
+        if (!cancelled) {
+          setInitializing(false);
+        }
+      }
+    };
+
+    initializeLayer();
+
+    // Cleanup function
+    return () => {
+      cancelled = true;
+    };
+  }, [map, file.id, file.filename, file.file_type, file.tile_status, file.tile_url_template, file.tile_error, file.tile_progress, file.bounds_south, file.bounds_west, file.bounds_north, file.bounds_east, layerExists, addLayer]);
+
+  const handleToggle = () => {
+    // Instant toggle!
+    if (!layerExists) {
+      setError('Layer not initialized');
+      return;
+    }
+
+    toggleLayer(file.id);
+    setError(null);
+  };
+
+  // Determine button state
+  const isReady = layerExists && !initializing;
+  const showLoading = initializing || (file.tile_status === 'processing' || file.tile_status === 'queued');
+
+  return (
+    <li className="flex items-center gap-2 group">
+      <button
+        type="button"
+        onClick={handleToggle}
+        disabled={!isReady}
+        className="shrink-0 flex items-center justify-center disabled:opacity-50"
+        aria-label={checked ? `Hide ${file.filename}` : `Show ${file.filename}`}
+        title={checked ? `Hide ${file.filename}` : `Show ${file.filename}`}
+      >
+        {showLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+        ) : checked ? (
+          <CheckSquare className="h-4 w-4 text-blue-400" />
+        ) : (
+          <Square className="h-4 w-4 text-gray-400" />
+        )}
+      </button>
+
+      <div className="flex-1 min-w-0">
+        <div className="truncate font-medium text-sm" title={file.filename}>
+          {file.filename}
+        </div>
+        <div className="text-xs text-slate-400">
+          <span>{formatFileSize(file.original_size_bytes)}</span>
+        </div>
+        {error && (
+          <div className="text-xs text-yellow-400 truncate" title={error}>
+            {error}
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={() => onDelete(file.id, file.filename)}
+        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-all shrink-0"
+        title="Delete file"
+        aria-label={`Delete ${file.filename}`}
+      >
+        <Trash2 className="h-3 w-3 text-red-400" />
+      </button>
+    </li>
+  );
+}

@@ -220,10 +220,12 @@ class TileGenerator:
 
             logger.info(f"Successfully uploaded {uploaded} tiles")
 
-            # Return tile URL template
-            # Note: Replace with your actual S3/CDN URL
+            # Return tile URL template using CloudFront CDN
+            # Import settings here to avoid circular import
+            from app.config import settings
+
             tile_url_template = (
-                f"https://{self.bucket_name}.s3.amazonaws.com/"
+                f"https://{settings.AWS_CLOUDFRONT_DOMAIN}/"
                 f"{self.base_tile_path}/{file_id}/{{z}}/{{x}}/{{y}}.png"
             )
 

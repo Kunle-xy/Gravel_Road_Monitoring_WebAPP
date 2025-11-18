@@ -53,6 +53,14 @@ class TiffFileResponse(BaseModel):
     upload_status: str
     upload_progress: int
     upload_completed_at: Optional[datetime]
+    # Tile generation fields
+    tile_status: Optional[str] = "pending"
+    tile_progress: Optional[int] = 0
+    tile_url_template: Optional[str] = None
+    tile_error: Optional[str] = None
+    tile_min_zoom: Optional[int] = 15
+    tile_max_zoom: Optional[int] = 21
+    tiles_generated_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
