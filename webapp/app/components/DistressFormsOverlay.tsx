@@ -20,13 +20,13 @@ const DistressFormsOverlay = () => {
           <strong>{activeDistress}</strong> automatic detection
         </h1>
         <div className="w-full">
-          {activeDistress === 'rut' && <RutForm />}
-          {activeDistress === 'corrugation' && <CorrugationForm />}
-          {activeDistress === 'loose Aggregate' && <div>Loose Aggregate form coming soon...</div>}
-          {activeDistress === 'crown' && <div>Crown form coming soon...</div>}
-          {activeDistress === 'potholes' && <div>Potholes form coming soon...</div>}
-          {activeDistress === 'dust' && <div>Dust form coming soon...</div>}
-          {activeDistress === 'drainage' && <div>Drainage form coming soon...</div>}
+          {activeDistress === 'Rut' && <RutForm />}
+          {activeDistress === 'Corrugation' && <CorrugationForm />}
+          {activeDistress === 'Loose Aggregate' && <div>Loose Aggregate form coming soon...</div>}
+          {activeDistress === 'Crown' && <div>Crown form coming soon...</div>}
+          {activeDistress === 'Potholes' && <div>Potholes form coming soon...</div>}
+          {activeDistress === 'Dust' && <div>Dust form coming soon...</div>}
+          {activeDistress === 'Drainage' && <div>Drainage form coming soon...</div>}
         </div>
       </div>
     </div>

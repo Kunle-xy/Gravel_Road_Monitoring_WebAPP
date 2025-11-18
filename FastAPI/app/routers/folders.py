@@ -2,11 +2,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 import uuid
+import boto3
+from botocore.exceptions import ClientError
+import logging
 
 from app.database import get_db
 from app.models import User, Folder, TiffFile
 from app.schemas import FolderCreate, FolderUpdate, FolderResponse, FolderWithFilesResponse, TiffFileResponse
 from app.auth import get_current_user
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Initialize S3 client
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    region_name=settings.AWS_REGION
+)
 
 router = APIRouter(
     prefix="/folders",
@@ -138,7 +152,18 @@ def delete_folder(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a folder (files will have folder_id set to NULL)"""
+    """
+    Delete a folder and ALL files within it.
+
+    This will permanently delete:
+    - All files in the folder from the database
+    - All original TIFF files from S3 RAW bucket
+    - All COG files from S3 (both RAW and APP buckets)
+    - All generated tiles from S3 APP bucket
+    - The folder itself from the database
+
+    This action is IRREVERSIBLE.
+    """
     folder = db.query(Folder).filter(
         Folder.id == folder_id,
         Folder.user_id == current_user.id
@@ -150,9 +175,71 @@ def delete_folder(
             detail="Folder not found"
         )
 
+    # Get all files in the folder
+    files_in_folder = db.query(TiffFile).filter(
+        TiffFile.folder_id == folder_id
+    ).all()
+
+    logger.info(f"Deleting folder '{folder.name}' (ID: {folder_id}) with {len(files_in_folder)} files")
+
+    # Delete each file's S3 objects before database cascade deletion
+    for db_file in files_in_folder:
+        try:
+            logger.info(f"Deleting S3 objects for file: {db_file.filename} (ID: {db_file.id})")
+
+            # 1. Delete original file from RAW bucket
+            try:
+                s3_client.delete_object(Bucket=db_file.s3_bucket, Key=db_file.s3_key)
+                logger.info(f"Deleted original: s3://{db_file.s3_bucket}/{db_file.s3_key}")
+            except ClientError as e:
+                logger.warning(f"Failed to delete original file: {e}")
+
+            # 2. Delete COG file from RAW bucket (if it exists)
+            if db_file.cog_s3_key and db_file.cog_s3_key.startswith('uploads/'):
+                try:
+                    s3_client.delete_object(Bucket=db_file.s3_bucket, Key=db_file.cog_s3_key)
+                    logger.info(f"Deleted COG from RAW: s3://{db_file.s3_bucket}/{db_file.cog_s3_key}")
+                except ClientError as e:
+                    logger.warning(f"Failed to delete COG from RAW bucket: {e}")
+
+            # 3. Delete COG file from APP bucket (tiles bucket)
+            cog_key_in_tiles_bucket = f"cogs/{db_file.user_id}/{db_file.id}.tif"
+            try:
+                s3_client.delete_object(Bucket=settings.S3_BUCKET_NAME, Key=cog_key_in_tiles_bucket)
+                logger.info(f"Deleted COG from APP: s3://{settings.S3_BUCKET_NAME}/{cog_key_in_tiles_bucket}")
+            except ClientError as e:
+                logger.warning(f"Failed to delete COG from APP bucket: {e}")
+
+            # 4. Delete all generated tiles from APP bucket
+            tile_prefix = f"tiles/{db_file.user_id}/{db_file.id}/"
+            try:
+                paginator = s3_client.get_paginator('list_objects_v2')
+                pages = paginator.paginate(Bucket=settings.S3_BUCKET_NAME, Prefix=tile_prefix)
+
+                delete_count = 0
+                for page in pages:
+                    if 'Contents' in page:
+                        objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
+                        if objects_to_delete:
+                            s3_client.delete_objects(
+                                Bucket=settings.S3_BUCKET_NAME,
+                                Delete={'Objects': objects_to_delete}
+                            )
+                            delete_count += len(objects_to_delete)
+
+                logger.info(f"Deleted {delete_count} tile files for {db_file.filename}")
+            except ClientError as e:
+                logger.warning(f"Failed to delete tiles: {e}")
+
+        except Exception as e:
+            # Log error but continue deleting other files
+            logger.error(f"Error deleting S3 objects for file {db_file.id}: {e}")
+
+    # Delete the folder (CASCADE will delete all file records from database)
     db.delete(folder)
     db.commit()
 
+    logger.info(f"Successfully deleted folder '{folder.name}' and {len(files_in_folder)} files")
     return None
 
 @router.post("/{folder_id}/files/{file_id}", response_model=TiffFileResponse)

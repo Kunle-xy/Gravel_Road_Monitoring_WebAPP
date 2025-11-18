@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import React, { useEffect, useState, useCallback, memo } from "react";
+import React, { useEffect, useState, useCallback, memo, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut, RefreshCw, CloudCog, FolderPlus } from "lucide-react";
+import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "../lib/api";
 import TiffFileItem from "./TiffFiles/TiffFileItem";
 import FolderTreeItem from "./FolderTree/FolderTreeItem";
@@ -48,6 +48,48 @@ function ProfileWidget() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const { user, logout, isAuthenticated } = useAuth();
+
+  // Resizable width state
+  const [isResizing, setIsResizing] = useState(false);
+  const [width, setWidth] = useState(256); // Default: w-64 = 16rem = 256px
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(256);
+  const widgetRef = useRef<HTMLElement>(null);
+
+  // Resize handlers
+  const handleResizeStart = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(width);
+  };
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+
+    // Calculate new width based on mouse movement
+    const deltaX = e.clientX - resizeStartX;
+    const newWidth = resizeStartWidth + deltaX;
+
+    // Set min/max constraints (min: 64px for collapsed, max: 600px)
+    const constrainedWidth = Math.max(64, Math.min(600, newWidth));
+    setWidth(constrainedWidth);
+  }, [isResizing, resizeStartX, resizeStartWidth]);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Add/remove mouse event listeners for resizing
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleResizeMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleResizeMove);
+        document.removeEventListener('mouseup', handleResizeEnd);
+      };
+    }
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
 
   // Fetch folders with files and uncategorized files
   const fetchAllFiles = useCallback(async () => {
@@ -194,11 +236,13 @@ function ProfileWidget() {
         setNewFolderName('');
         await fetchAllFiles();
       } else {
-        alert('Failed to create folder. Please try again.');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Failed to create folder:', response.status, errorData);
+        alert(`Failed to create folder: ${errorData.detail || response.statusText}`);
       }
     } catch (error) {
       console.error('Failed to create folder:', error);
-      alert('Failed to create folder. Please try again.');
+      alert(`Failed to create folder: ${error instanceof Error ? error.message : 'Network error'}`);
     }
   };
 
@@ -209,16 +253,31 @@ function ProfileWidget() {
 
   return (
     <aside
+      ref={widgetRef}
+      style={{
+        width: open ? `${width}px` : '64px',
+        transition: isResizing ? 'none' : 'width 300ms ease-in-out'
+      }}
       className={`
         relative h-full p-4 text-slate-100
-        transition-all duration-300 ease-in-out
-        ${open ? "w-64" : "w-16"}
         bg-gradient-to-b from-slate-900 to-slate-800
         ring-1 ring-inset ring-slate-700/50
         flex flex-col
+        ${isResizing ? 'select-none' : ''}
       `}
       aria-label="Profile widget"
     >
+      {/* === RESIZE HANDLE === */}
+      {open && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute top-0 right-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500/20 active:bg-blue-500/30 transition-colors group"
+          title="Drag to resize sidebar"
+        >
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-12 bg-slate-600 group-hover:bg-blue-400 rounded-full transition-colors" />
+        </div>
+      )}
+
       {/* === PROFILE HEADER === */}
       <div className="flex items-center gap-3 mb-6 shrink-0">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold shrink-0">
@@ -259,59 +318,10 @@ function ProfileWidget() {
               open ? "" : "justify-center"
             }`}
           >
-            <UploadIcon />
+            <Upload className="h-4 w-4" />
             {open && <span>Upload Files</span>}
           </button>
         </Link>
-
-        {/* Create Folder Button */}
-        {open && !showCreateFolder && (
-          <button
-            onClick={() => setShowCreateFolder(true)}
-            className="w-full rounded-lg bg-blue-500/20 px-3 py-2 text-sm hover:bg-blue-500/30 transition-colors flex items-center gap-2 text-blue-300"
-          >
-            <FolderPlus className="h-4 w-4" />
-            <span>New Folder</span>
-          </button>
-        )}
-
-        {/* Create Folder Form */}
-        {open && showCreateFolder && (
-          <div className="bg-white/5 rounded-lg p-3 space-y-2">
-            <input
-              type="text"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateFolder();
-                if (e.key === 'Escape') {
-                  setShowCreateFolder(false);
-                  setNewFolderName('');
-                }
-              }}
-              placeholder="Folder name..."
-              autoFocus
-              className="w-full bg-white/10 text-sm px-2 py-1.5 rounded border border-white/20 focus:outline-none focus:border-blue-400"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleCreateFolder}
-                className="flex-1 bg-blue-500/30 hover:bg-blue-500/40 px-2 py-1 rounded text-xs transition-colors"
-              >
-                Create
-              </button>
-              <button
-                onClick={() => {
-                  setShowCreateFolder(false);
-                  setNewFolderName('');
-                }}
-                className="flex-1 bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-xs transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Action Buttons */}
         {open && (
@@ -402,6 +412,58 @@ function ProfileWidget() {
         )}
       </div>
 
+      {/* === NEW PROJECT SECTION (ABOVE LOGOUT) === */}
+      <div className="px-4 pb-3 shrink-0">
+        {/* Create Project Button */}
+        {open && !showCreateFolder && (
+          <button
+            onClick={() => setShowCreateFolder(true)}
+            className="w-full rounded-lg bg-blue-500/20 px-3 py-2 text-sm hover:bg-blue-500/30 transition-colors flex items-center gap-2 text-blue-300"
+          >
+            <FolderPlus className="h-4 w-4" />
+            <span>New Project</span>
+          </button>
+        )}
+
+        {/* Create Project Form */}
+        {open && showCreateFolder && (
+          <div className="bg-white/5 rounded-lg p-3 space-y-2">
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateFolder();
+                if (e.key === 'Escape') {
+                  setShowCreateFolder(false);
+                  setNewFolderName('');
+                }
+              }}
+              placeholder="Project name..."
+              autoFocus
+              className="w-full bg-white/10 text-sm px-2 py-1.5 rounded border border-white/20 focus:outline-none focus:border-blue-400"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateFolder}
+                className="flex-1 bg-blue-500/30 hover:bg-blue-500/40 px-2 py-1 rounded text-xs transition-colors"
+              >
+                Create
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateFolder(false);
+                  setNewFolderName('');
+                }}
+                className="flex-1 bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-xs transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* === LOGOUT BUTTON (BOTTOM) === */}
       <div className="pt-3 border-t-2 border-red-500/50 shrink-0 bg-slate-800">
         <button
@@ -447,14 +509,6 @@ function ProfileWidget() {
 }
 
 // === ICONS ===
-function UploadIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-      <path d="M10 3.5a.75.75 0 0 1 .75.75v6.5h6.5a.75.75 0 0 1 0 1.5h-6.5v6.5a.75.75 0 0 1-1.5 0v-6.5H3.75a.75.75 0 0 1 0-1.5h6.5v-6.5A.75.75 0 0 1 10 3.5Z" />
-    </svg>
-  );
-}
-
 function FileIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="currentColor">

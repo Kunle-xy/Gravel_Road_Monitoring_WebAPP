@@ -35,14 +35,14 @@ class Folder(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", back_populates="folders")
-    tiff_files = relationship("TiffFile", back_populates="folder")
+    tiff_files = relationship("TiffFile", back_populates="folder", cascade="all, delete-orphan")
 
 class TiffFile(Base):
     __tablename__ = "tiff_files"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
+    folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
     filename = Column(String(255), nullable=False)
     file_type = Column(String(50), nullable=False)
     original_size_bytes = Column(BigInteger, nullable=False)
