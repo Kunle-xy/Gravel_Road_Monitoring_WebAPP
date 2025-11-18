@@ -2,9 +2,10 @@
 import Link from "next/link";
 import React, { useEffect, useState, useCallback, memo } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut, RefreshCw, CloudCog } from "lucide-react";
+import { LogOut, RefreshCw, CloudCog, FolderPlus } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "../lib/api";
 import TiffFileItem from "./TiffFiles/TiffFileItem";
+import FolderTreeItem from "./FolderTree/FolderTreeItem";
 
 interface TiffFile {
   id: string;
@@ -12,6 +13,7 @@ interface TiffFile {
   file_type: string;
   original_size_bytes: number;
   created_at: string;
+  folder_id?: string;
   // Tile generation fields
   tile_status?: string;
   tile_url_template?: string;
@@ -27,15 +29,27 @@ interface TiffFile {
   upload_status?: string;
 }
 
+interface Folder {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  is_expanded: boolean;
+  files: TiffFile[];
+}
+
 function ProfileWidget() {
   const [open, setOpen] = useState(true);
-  const [allFiles, setAllFiles] = useState<TiffFile[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [uncategorizedFiles, setUncategorizedFiles] = useState<TiffFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const { user, logout, isAuthenticated } = useAuth();
 
-  // Fetch all files (DEM and ORTHOPHOTO)
+  // Fetch folders with files and uncategorized files
   const fetchAllFiles = useCallback(async () => {
     if (!isAuthenticated) {
       setLoading(false);
@@ -44,15 +58,25 @@ function ProfileWidget() {
 
     setError(null); // Clear previous errors
     try {
-      const response = await fetchWithAuth(API_ENDPOINTS.FILES.LIST);
+      // Fetch folders with files
+      const foldersResponse = await fetchWithAuth(API_ENDPOINTS.FOLDERS.LIST_WITH_FILES);
 
-      if (response.ok) {
-        const data = await response.json();
-        const files = data.files || [];
-        setAllFiles(files);
+      // Fetch all files to get uncategorized ones
+      const filesResponse = await fetchWithAuth(API_ENDPOINTS.FILES.LIST);
+
+      if (foldersResponse.ok && filesResponse.ok) {
+        const foldersData = await foldersResponse.json();
+        const filesData = await filesResponse.json();
+
+        const allFiles = filesData.files || [];
+        setFolders(foldersData);
+
+        // Filter uncategorized files (files without folder_id)
+        const uncategorized = allFiles.filter((f: TiffFile) => !f.folder_id);
+        setUncategorizedFiles(uncategorized);
 
         // Check for failed files and show alert
-        const failedFiles = files.filter((f: TiffFile) => f.tile_status === 'failed');
+        const failedFiles = allFiles.filter((f: TiffFile) => f.tile_status === 'failed');
         if (failedFiles.length > 0) {
           const errorMessages = failedFiles.map((f: TiffFile) =>
             `${f.filename}: ${f.tile_error || 'Processing failed'}`
@@ -60,7 +84,7 @@ function ProfileWidget() {
 
           alert(`⚠️ Tile generation failed for ${failedFiles.length} file(s):\n\n${errorMessages}\n\nPlease delete and re-upload these files.`);
         }
-      } else if (response.status === 401) {
+      } else if (foldersResponse.status === 401 || filesResponse.status === 401) {
         // Token expired or invalid
         setError('Authentication failed. Please login again.');
         console.error('Authentication failed when fetching files');
@@ -148,14 +172,40 @@ function ProfileWidget() {
     }
   };
 
+  // Create folder handler
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      alert('Please enter a folder name');
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuth(API_ENDPOINTS.FOLDERS.CREATE, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newFolderName,
+          description: '',
+          color: '#3b82f6'
+        }),
+      });
+
+      if (response.ok) {
+        setShowCreateFolder(false);
+        setNewFolderName('');
+        await fetchAllFiles();
+      } else {
+        alert('Failed to create folder. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to create folder:', error);
+      alert('Failed to create folder. Please try again.');
+    }
+  };
+
   const getInitials = (firstName?: string, lastName?: string) => {
     if (!firstName || !lastName) return 'U';
     return `${firstName[0]}${lastName[0]}`.toUpperCase();
   };
-
-  // Filter files by type
-  const demFiles = allFiles.filter(file => file.file_type === 'DEM');
-  const orthoFiles = allFiles.filter(file => file.file_type === 'ORTHOPHOTO');
 
   return (
     <aside
@@ -214,6 +264,55 @@ function ProfileWidget() {
           </button>
         </Link>
 
+        {/* Create Folder Button */}
+        {open && !showCreateFolder && (
+          <button
+            onClick={() => setShowCreateFolder(true)}
+            className="w-full rounded-lg bg-blue-500/20 px-3 py-2 text-sm hover:bg-blue-500/30 transition-colors flex items-center gap-2 text-blue-300"
+          >
+            <FolderPlus className="h-4 w-4" />
+            <span>New Folder</span>
+          </button>
+        )}
+
+        {/* Create Folder Form */}
+        {open && showCreateFolder && (
+          <div className="bg-white/5 rounded-lg p-3 space-y-2">
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateFolder();
+                if (e.key === 'Escape') {
+                  setShowCreateFolder(false);
+                  setNewFolderName('');
+                }
+              }}
+              placeholder="Folder name..."
+              autoFocus
+              className="w-full bg-white/10 text-sm px-2 py-1.5 rounded border border-white/20 focus:outline-none focus:border-blue-400"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateFolder}
+                className="flex-1 bg-blue-500/30 hover:bg-blue-500/40 px-2 py-1 rounded text-xs transition-colors"
+              >
+                Create
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateFolder(false);
+                  setNewFolderName('');
+                }}
+                className="flex-1 bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-xs transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons */}
         {open && (
           <div className="flex items-center justify-end gap-1">
@@ -254,51 +353,51 @@ function ProfileWidget() {
           </div>
         ) : (
           <>
-            {/* DEM Files Section */}
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-2">
-                {open ? (
-                  <span>DEM Files ({demFiles.length})</span>
-                ) : (
-                  <FileIcon className="h-4 w-4" />
-                )}
-              </div>
-
-              {demFiles.length === 0 ? (
-                <div className={`text-sm text-slate-400 ${open ? '' : 'hidden'}`}>
-                  No DEM files
+            {/* Folders Section */}
+            {folders.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-400 mb-3">
+                  Projects ({folders.length})
                 </div>
-              ) : (
+                <div className="space-y-1">
+                  {folders.map((folder) => (
+                    <FolderTreeItem
+                      key={folder.id}
+                      folder={folder}
+                      onDelete={handleDelete}
+                      onRefresh={fetchAllFiles}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Uncategorized Files Section */}
+            {uncategorizedFiles.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-2">
+                  {open ? (
+                    <span>Uncategorized Files ({uncategorizedFiles.length})</span>
+                  ) : (
+                    <FileIcon className="h-4 w-4" />
+                  )}
+                </div>
                 <ul className="space-y-2 text-sm">
-                  {demFiles.map((file) => (
+                  {uncategorizedFiles.map((file) => (
                     <TiffFileItem key={file.id} file={file} onDelete={handleDelete} />
                   ))}
                 </ul>
-              )}
-            </div>
-
-            {/* ORTHOPHOTO Files Section */}
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-2">
-                {open ? (
-                  <span>Orthophoto Files ({orthoFiles.length})</span>
-                ) : (
-                  <FileIcon className="h-4 w-4" />
-                )}
               </div>
+            )}
 
-              {orthoFiles.length === 0 ? (
-                <div className={`text-sm text-slate-400 ${open ? '' : 'hidden'}`}>
-                  No orthophoto files
-                </div>
-              ) : (
-                <ul className="space-y-2 text-sm">
-                  {orthoFiles.map((file) => (
-                    <TiffFileItem key={file.id} file={file} onDelete={handleDelete} />
-                  ))}
-                </ul>
-              )}
-            </div>
+            {/* Empty State */}
+            {folders.length === 0 && uncategorizedFiles.length === 0 && (
+              <div className={`text-sm text-slate-400 text-center py-8 ${open ? '' : 'hidden'}`}>
+                <FileIcon className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <p>No files yet</p>
+                <p className="text-xs mt-1">Upload files to get started</p>
+              </div>
+            )}
           </>
         )}
       </div>
