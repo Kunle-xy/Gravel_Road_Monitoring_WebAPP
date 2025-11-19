@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, BigInteger, Integer, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, BigInteger, Integer, ForeignKey, Text, Float, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -77,3 +77,44 @@ class TiffFile(Base):
 
     user = relationship("User", back_populates="tiff_files")
     folder = relationship("Folder", back_populates="tiff_files")
+    rut_analyses = relationship("RutAnalysisJob", back_populates="tiff_file", cascade="all, delete-orphan")
+
+class RutAnalysisJob(Base):
+    __tablename__ = "rut_analysis_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tiff_file_id = Column(UUID(as_uuid=True), ForeignKey("tiff_files.id", ondelete="CASCADE"), nullable=False)
+
+    # Analysis parameters
+    polygon_geojson = Column(JSON, nullable=False)  # GeoJSON polygon for analysis area
+    dy_freq = Column(Integer, default=3)  # Sampling frequency per 100 pixels
+    dx = Column(Float, default=0.1)  # Rutting width in meters
+    apply_smoothing = Column(Boolean, default=False)  # Apply Gaussian smoothing
+    gaussian_sigma = Column(Float, default=1.0)  # Gaussian sigma in pixels
+
+    # Job status
+    status = Column(String(50), default="pending")  # pending, processing, completed, failed
+    progress = Column(Integer, default=0)  # 0-100
+    error_message = Column(Text)
+    celery_task_id = Column(String(255))  # Celery task ID for tracking
+
+    # Results
+    results_json = Column(JSON)  # Store detected ruts as JSON
+    html_plot_s3_key = Column(String(500))  # S3 key for HTML plot
+    html_plot_url = Column(Text)  # CloudFront URL for HTML plot
+    pdf_plot_s3_key = Column(String(500))  # S3 key for PDF report
+    pdf_plot_url = Column(Text)  # CloudFront URL for PDF report
+
+    # Statistics
+    total_ruts_detected = Column(Integer, default=0)
+    low_severity_count = Column(Integer, default=0)
+    medium_severity_count = Column(Integer, default=0)
+    high_severity_count = Column(Integer, default=0)
+    total_area_sqft = Column(Float, default=0.0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True))
+
+    tiff_file = relationship("TiffFile", back_populates="rut_analyses")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid as uuid_lib
 
@@ -105,6 +105,59 @@ class FolderWithFilesResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
     files: List[TiffFileResponse]
+
+    class Config:
+        from_attributes = True
+
+# Rut Analysis Schemas
+class RutAnalysisCreate(BaseModel):
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]  # GeoJSON polygon
+    dy_freq: Optional[int] = 3  # Sampling frequency per 100 pixels
+    dx: Optional[float] = 0.1  # Rutting width in meters
+    apply_smoothing: Optional[bool] = False
+    gaussian_sigma: Optional[float] = 1.0
+
+class RutAnalysisResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+    dy_freq: int
+    dx: float
+    apply_smoothing: bool
+    gaussian_sigma: float
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    celery_task_id: Optional[str] = None
+    results_json: Optional[Dict[str, Any]] = None
+    html_plot_url: Optional[str] = None
+    pdf_plot_url: Optional[str] = None
+    total_ruts_detected: int
+    low_severity_count: int
+    medium_severity_count: int
+    high_severity_count: int
+    total_area_sqft: float
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class RutAnalysisStatusResponse(BaseModel):
+    id: uuid_lib.UUID
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    html_plot_url: Optional[str] = None
+    pdf_plot_url: Optional[str] = None
+    total_ruts_detected: int
+    low_severity_count: int
+    medium_severity_count: int
+    high_severity_count: int
+    total_area_sqft: float
 
     class Config:
         from_attributes = True

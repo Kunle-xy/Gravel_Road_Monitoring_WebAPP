@@ -17,6 +17,15 @@ rasterio==1.4.3
 rio-tiler==7.9.2
 numpy==1.26.4
 
+# Rut analysis dependencies
+shapely==2.0.7
+pyproj==3.7.0  # Coordinate transformations
+scipy==1.14.1
+pandas==2.2.3
+plotly==5.24.1
+kaleido==0.2.1  # Static image export for Plotly
+weasyprint==62.3  # PDF generation from HTML
+
 # Celery for distributed task processing
 celery==5.4.0
 redis==5.2.1  # Redis client for Celery broker/backend

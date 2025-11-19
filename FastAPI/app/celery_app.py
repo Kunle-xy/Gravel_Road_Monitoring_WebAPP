@@ -13,7 +13,7 @@ celery_app = Celery(
     "gravel_road_tiles",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.workers.tile_worker"]  # Auto-discover tasks
+    include=["app.workers.tile_worker", "app.workers.rut_worker"]  # Auto-discover tasks
 )
 
 # Celery configuration
@@ -27,8 +27,8 @@ celery_app.conf.update(
 
     # Task execution settings
     task_track_started=True,  # Track when task starts
-    task_time_limit=3600,  # 1 hour hard time limit
-    task_soft_time_limit=3300,  # 55 minutes soft time limit
+    task_time_limit=None,  # No hard time limit - allow tasks to run indefinitely
+    task_soft_time_limit=None,  # No soft time limit - allow tasks to run indefinitely
 
     # Result backend settings
     result_expires=86400,  # Results expire after 24 hours
@@ -43,9 +43,10 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,  # Requeue task if worker dies
 
     # Task routing (optional - for multiple queues)
-    task_default_queue="tiles",
+    task_default_queue="celery",  # Default Celery queue
     task_routes={
         "app.workers.tile_worker.generate_tiles_task": {"queue": "tiles"},
+        "app.workers.rut_worker.analyze_ruts_task": {"queue": "celery"},
     },
 )
 

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import auth, files, upload, tiles, tiles_status, folders
+from app.routers import auth, files, upload, tiles, tiles_status, folders, rut_analysis
 import logging
 
 # Configure logging
@@ -37,6 +37,7 @@ app.include_router(folders.router)
 app.include_router(upload.router)
 app.include_router(tiles.router)
 app.include_router(tiles_status.router)  # New: Tile generation status API
+app.include_router(rut_analysis.router)  # New: Rut distress analysis
 
 
 @app.on_event("startup")
