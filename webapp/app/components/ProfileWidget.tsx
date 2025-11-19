@@ -2,7 +2,7 @@
 import Link from "next/link";
 import React, { useEffect, useState, useCallback, memo, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload } from "lucide-react";
+import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload, ArrowDownUp, FileText, Download, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "../lib/api";
 import TiffFileItem from "./TiffFiles/TiffFileItem";
 import FolderTreeItem from "./FolderTree/FolderTreeItem";
@@ -38,15 +38,28 @@ interface Folder {
   files: TiffFile[];
 }
 
+interface CompletedJob {
+  id: string;
+  tiff_file_id: string;
+  html_plot_url: string;
+  pdf_plot_url: string;
+  completed_at: string;
+  total_ruts_detected: number;
+  total_area_sqft: number;
+}
+
 function ProfileWidget() {
   const [open, setOpen] = useState(true);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [uncategorizedFiles, setUncategorizedFiles] = useState<TiffFile[]>([]);
+  const [completedJobs, setCompletedJobs] = useState<CompletedJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [sortBy, setSortBy] = useState<'name' | 'fileCount'>('fileCount');
+  const [showCompletedJobs, setShowCompletedJobs] = useState(true);
   const { user, logout, isAuthenticated } = useAuth();
 
   // Resizable width state
@@ -90,6 +103,21 @@ function ProfileWidget() {
       };
     }
   }, [isResizing, handleResizeMove, handleResizeEnd]);
+
+  // Fetch completed rut analysis jobs
+  const fetchCompletedJobs = useCallback(async () => {
+    if (!isAuthenticated) return;
+
+    try {
+      const response = await fetchWithAuth(API_ENDPOINTS.RUT.COMPLETED);
+      if (response.ok) {
+        const data = await response.json();
+        setCompletedJobs(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch completed jobs:', error);
+    }
+  }, [isAuthenticated]);
 
   // Fetch folders with files and uncategorized files
   const fetchAllFiles = useCallback(async () => {
@@ -152,6 +180,7 @@ function ProfileWidget() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchAllFiles();
+      fetchCompletedJobs();
     }
     // Only run once when component mounts
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -161,6 +190,7 @@ function ProfileWidget() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchAllFiles();
+    fetchCompletedJobs();
   };
 
   // Sync with S3 handler
@@ -184,7 +214,7 @@ function ProfileWidget() {
       }
     } catch (error) {
       console.error('Failed to sync files:', error);
-      alert('Failed to sync files with S3. Please try again.');
+      alert('Failed to sync files with cloud storage. Please try again.');
     } finally {
       setRefreshing(false);
     }
@@ -192,7 +222,7 @@ function ProfileWidget() {
 
   // Delete file handler
   const handleDelete = async (fileId: string, filename: string) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"? This will remove the file from both the database and S3 storage.`)) {
+    if (!confirm(`Are you sure you want to delete "${filename}"? This will remove the file from both the database and cloud storage.`)) {
       return;
     }
 
@@ -339,8 +369,8 @@ function ProfileWidget() {
               onClick={handleSync}
               disabled={refreshing || loading}
               className="p-1 hover:bg-blue-500/20 bg-blue-500/10 rounded transition-colors disabled:opacity-50"
-              title="Sync with S3 (remove orphaned records)"
-              aria-label="Sync with S3"
+              title="Sync with cloud storage (remove orphaned records)"
+              aria-label="Sync with cloud storage"
             >
               <CloudCog className={`h-3 w-3 text-blue-400 ${refreshing ? 'animate-pulse' : ''}`} />
             </button>
@@ -363,21 +393,102 @@ function ProfileWidget() {
           </div>
         ) : (
           <>
+            {/* Completed Jobs Section */}
+            {completedJobs.length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs uppercase tracking-wide text-slate-400 mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-3 w-3" />
+                    <span>Completed Jobs ({completedJobs.length})</span>
+                  </div>
+                  {open && (
+                    <button
+                      onClick={() => setShowCompletedJobs(!showCompletedJobs)}
+                      className="p-1 hover:bg-white/10 rounded transition-colors"
+                      title={showCompletedJobs ? "Hide completed jobs" : "Show completed jobs"}
+                    >
+                      {showCompletedJobs ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
+                    </button>
+                  )}
+                </div>
+                {showCompletedJobs && (
+                  <div className="space-y-2">
+                    {completedJobs.map((job) => (
+                      <div
+                        key={job.id}
+                        className="bg-green-900/20 border border-green-700/30 rounded-lg p-2 text-xs"
+                      >
+                        <div className="text-slate-300 mb-1 flex items-center gap-1">
+                          <span className="font-medium">
+                            {new Date(job.completed_at).toLocaleDateString()}
+                          </span>
+                          <span className="text-slate-500">•</span>
+                          <span className="text-green-400">{job.total_ruts_detected} ruts</span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <a
+                            href={job.html_plot_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[10px] transition-colors"
+                            title="View interactive plot"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            <span>Plot</span>
+                          </a>
+                          <a
+                            href={job.pdf_plot_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[10px] transition-colors"
+                            title="Download PDF report"
+                          >
+                            <Download className="h-3 w-3" />
+                            <span>PDF</span>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Folders Section */}
             {folders.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400 mb-3">
-                  Projects ({folders.length})
+                <div className="text-xs uppercase tracking-wide text-slate-400 mb-3 flex items-center justify-between">
+                  <span>Projects ({folders.length})</span>
+                  <button
+                    onClick={() => setSortBy(sortBy === 'name' ? 'fileCount' : 'name')}
+                    className="p-1 hover:bg-white/10 rounded transition-colors"
+                    title={sortBy === 'name' ? 'Sort by file count' : 'Sort by name'}
+                  >
+                    <ArrowDownUp className="h-3 w-3" />
+                  </button>
                 </div>
                 <div className="space-y-1">
-                  {folders.map((folder) => (
-                    <FolderTreeItem
-                      key={folder.id}
-                      folder={folder}
-                      onDelete={handleDelete}
-                      onRefresh={fetchAllFiles}
-                    />
-                  ))}
+                  {[...folders]
+                    .sort((a, b) => {
+                      if (sortBy === 'name') {
+                        return a.name.localeCompare(b.name);
+                      } else {
+                        // Sort by file count (descending - most files first)
+                        return b.files.length - a.files.length;
+                      }
+                    })
+                    .map((folder) => (
+                      <FolderTreeItem
+                        key={folder.id}
+                        folder={folder}
+                        onDelete={handleDelete}
+                        onRefresh={fetchAllFiles}
+                      />
+                    ))}
                 </div>
               </div>
             )}

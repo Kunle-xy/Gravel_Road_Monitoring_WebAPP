@@ -1,7 +1,9 @@
 // app/components/DistressForms/rut.tsx
 "use client";
-import React, { useState } from "react";
-import { FolderOpen, CheckSquare, Square, AlertCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Download } from "lucide-react";
+import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import { usePolygons } from "@/app/contexts/PolygonContext";
 
 function RowGrid({
   label,
@@ -11,8 +13,8 @@ function RowGrid({
   control: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-2 py-0.5">
-      <label className="font-bold text-[11px] text-gray-800">{label}</label>
+    <div className="grid grid-cols-[1fr_auto] items-center gap-3 py-1">
+      <label className="font-semibold text-[12px] text-slate-300">{label}</label>
       <div className="flex items-center">{control}</div>
     </div>
   );
@@ -33,17 +35,17 @@ function CheckboxToggle({
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="flex items-center gap-1.5"
+      className="flex items-center gap-2 hover:bg-slate-700/50 px-2 py-1 rounded transition-colors"
       aria-label={ariaLabel}
       aria-checked={checked}
       role="checkbox"
     >
       {checked ? (
-        <CheckSquare size={12} className="text-blue-600" />
+        <CheckSquare size={16} className="text-blue-400" />
       ) : (
-        <Square size={12} className="text-gray-400" />
+        <Square size={16} className="text-slate-500" />
       )}
-      {label && <span className="text-[10px]">{label}</span>}
+      {label && <span className="text-[12px] text-slate-300">{label}</span>}
     </button>
   );
 }
@@ -62,15 +64,15 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`flex items-center gap-2 px-3 py-2 rounded shadow-lg text-white text-[11px] ${
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-xl text-white text-[13px] font-medium border ${
             toast.type === "error"
-              ? "bg-red-600"
+              ? "bg-red-600 border-red-500"
               : toast.type === "success"
-              ? "bg-green-600"
-              : "bg-blue-600"
+              ? "bg-green-600 border-green-500"
+              : "bg-blue-600 border-blue-500"
           }`}
         >
-          <AlertCircle size={14} />
+          <AlertCircle size={16} />
           <span>{toast.message}</span>
         </div>
       ))}
@@ -78,23 +80,55 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
   );
 }
 
+interface DemFile {
+  id: string;
+  filename: string;
+  file_type: string;
+  folder_name?: string;
+  bounds_south?: string;
+  bounds_west?: string;
+  bounds_north?: string;
+  bounds_east?: string;
+}
+
+interface AnalysisResults {
+  id: string;
+  status: string;
+  progress: number;
+  total_ruts_detected: number;
+  low_severity_count: number;
+  medium_severity_count: number;
+  high_severity_count: number;
+  total_area_sqft: number;
+  html_plot_url?: string;
+  pdf_plot_url?: string;
+  error_message?: string;
+}
+
 export default function RutForm() {
-  const [demFile, setDemFile] = useState<File | null>(null);
-  const [orthophotoFile, setOrthophotoFile] = useState<File | null>(null);
-  const [inputPolygonFile, setInputPolygonFile] = useState<File | null>(null);
-  const [outputPlotPath, setOutputPlotPath] = useState("");
-  const [outputDistressPath, setOutputDistressPath] = useState("");
+  // DEM file selection
+  const [demFiles, setDemFiles] = useState<DemFile[]>([]);
+  const [selectedDemId, setSelectedDemId] = useState<string>("");
+  const [loadingFiles, setLoadingFiles] = useState(true);
+
+  // Polygon selection from context
+  const { polygons } = usePolygons();
+  const [selectedPolygonId, setSelectedPolygonId] = useState<string>("");
+
+  // Analysis parameters
   const [sampling, setSampling] = useState(3);
   const [ruttingWidth, setRuttingWidth] = useState(0.1);
-  const [neighborRange, setNeighborRange] = useState(2);
   const [gaussian, setGaussian] = useState(false);
-  const [sigma, setSigma] = useState(1);
-  const [tryNeighbor, setTryNeighbor] = useState(false);
+  const [sigma, setSigma] = useState(1.0);
+
+  // Analysis state
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [results, setResults] = useState<AnalysisResults | null>(null);
 
   const inputBox =
-    "w-24 border border-gray-300 rounded px-2 py-0.5 text-center text-[10px]";
+    "w-28 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-center text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
 
   const showToast = (message: string, type: Toast["type"] = "error") => {
     const id = Date.now();
@@ -104,56 +138,132 @@ export default function RutForm() {
     }, 4000);
   };
 
-  const handleFileChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-    type: "dem" | "ortho" | "polygon"
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // Fetch user's DEM files on mount
+  useEffect(() => {
+    const fetchDemFiles = async () => {
+      try {
+        const response = await fetchWithAuth(API_ENDPOINTS.FOLDERS.LIST_WITH_FILES);
+        if (response.ok) {
+          const folders = await response.json();
+          // Extract all DEM files from all folders with folder name
+          const allDems: DemFile[] = [];
 
-    if (type === "polygon") {
-      // Accept shapefiles and geojson for polygon features
-      if (!file.name.match(/\.(shp|geojson|json)$/i)) {
-        showToast("Only .shp, .geojson, or .json files are supported for polygon features");
-        return;
-      }
-      setInputPolygonFile(file);
-    } else {
-      if (!file.name.match(/\.(tif|tiff)$/i)) {
-        showToast("Only .tif or .tiff files are supported");
-        return;
-      }
-      if (type === "dem") setDemFile(file);
-      else setOrthophotoFile(file);
-    }
-  };
+          folders.forEach((folder: any) => {
+            const folderDems = folder.files
+              .filter((f: any) => f.file_type === "DEM")
+              .map((f: any) => ({
+                ...f,
+                folder_name: folder.name,
+              }));
+            allDems.push(...folderDems);
+          });
 
-  const handleOutputPathChange = (type: "plot" | "distress") => {
-    // In a real application, this would open a file save dialog
-    // For now, we'll simulate it with a prompt
-    const path = prompt(
-      `Enter output path for ${type === "plot" ? "HTML plot" : "distress features"}:`,
-      type === "plot" ? "output_plot.html" : "output_distress.shp"
-    );
-    if (path) {
-      if (type === "plot") setOutputPlotPath(path);
-      else setOutputDistressPath(path);
-    }
-  };
+          setDemFiles(allDems);
+          if (allDems.length > 0) {
+            setSelectedDemId(allDems[0].id);
+          }
+        }
+      } catch {
+        showToast("Failed to load DEM files", "error");
+      } finally {
+        setLoadingFiles(false);
+      }
+    };
+
+    fetchDemFiles();
+  }, []);
+
+  // Poll for job status
+  useEffect(() => {
+    if (!jobId || !isAnalyzing) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetchWithAuth(`${API_ENDPOINTS.RUT.BASE}/${jobId}/status`);
+        if (response.ok) {
+          const data: AnalysisResults = await response.json();
+          setResults(data);
+
+          if (data.status === "completed") {
+            setIsAnalyzing(false);
+            showToast(
+              `Analysis complete! Detected ${data.total_ruts_detected} ruts.`,
+              "success"
+            );
+            clearInterval(pollInterval);
+          } else if (data.status === "failed") {
+            setIsAnalyzing(false);
+            showToast(data.error_message || "Analysis failed", "error");
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (error) {
+        console.error("Polling error:", error);
+      }
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [jobId, isAnalyzing]);
 
   const validateForm = (): boolean => {
-    if (!inputPolygonFile) {
-      showToast("Please select an input polygon feature file");
+    if (!selectedDemId) {
+      showToast("Please select a DEM file");
       return false;
     }
-    if (!demFile) {
-      showToast("Please select a DEM raster file");
+    if (!selectedPolygonId) {
+      showToast("Please select a polygon");
       return false;
     }
-    if (!orthophotoFile) {
-      showToast("Please select an orthophoto raster file");
+
+    const polygon = polygons.find(p => p.id === selectedPolygonId);
+    if (!polygon) {
+      showToast("Selected polygon not found");
       return false;
     }
+
+    // Validate polygon is within DEM bounds
+    const selectedDem = demFiles.find(f => f.id === selectedDemId);
+    if (selectedDem && selectedDem.bounds_south && selectedDem.bounds_west &&
+        selectedDem.bounds_north && selectedDem.bounds_east) {
+
+      const demBounds = {
+        south: parseFloat(selectedDem.bounds_south),
+        west: parseFloat(selectedDem.bounds_west),
+        north: parseFloat(selectedDem.bounds_north),
+        east: parseFloat(selectedDem.bounds_east),
+      };
+
+      // Get polygon bounds from GeoJSON
+      const coords = polygon.geoJSON.coordinates[0];
+      const lngs = coords.map((c: number[]) => c[0]);
+      const lats = coords.map((c: number[]) => c[1]);
+
+      const polyBounds = {
+        west: Math.min(...lngs),
+        east: Math.max(...lngs),
+        south: Math.min(...lats),
+        north: Math.max(...lats),
+      };
+
+      // Check if polygon is completely outside DEM
+      if (polyBounds.east < demBounds.west || polyBounds.west > demBounds.east ||
+          polyBounds.north < demBounds.south || polyBounds.south > demBounds.north) {
+        showToast(
+          `Selected polygon is outside the DEM bounds. Please draw a polygon within the DEM coverage area.`
+        );
+        return false;
+      }
+
+      // Warn if polygon is partially outside DEM
+      if (polyBounds.west < demBounds.west || polyBounds.east > demBounds.east ||
+          polyBounds.south < demBounds.south || polyBounds.north > demBounds.north) {
+        showToast(
+          `Warning: Polygon extends beyond DEM bounds. Analysis will be limited to DEM coverage area.`,
+          "info"
+        );
+      }
+    }
+
     if (sampling <= 0) {
       showToast("Sampling frequency must be greater than 0");
       return false;
@@ -162,20 +272,8 @@ export default function RutForm() {
       showToast("Rutting width must be greater than 0");
       return false;
     }
-    if (tryNeighbor && neighborRange <= 0) {
-      showToast("Neighbor range must be greater than 0");
-      return false;
-    }
     if (gaussian && sigma <= 0) {
       showToast("Gaussian sigma must be greater than 0");
-      return false;
-    }
-    if (!outputPlotPath) {
-      showToast("Please specify an output path for the HTML plot");
-      return false;
-    }
-    if (!outputDistressPath) {
-      showToast("Please specify an output path for distress features");
       return false;
     }
     return true;
@@ -185,247 +283,303 @@ export default function RutForm() {
     if (!validateForm()) return;
 
     setIsAnalyzing(true);
+    setResults(null);
+    setJobId(null);
+
     try {
-      // TODO: Implement actual analysis API call
-      // For now, simulate processing
+      // Get polygon from context
+      const selectedPolygon = polygons.find(p => p.id === selectedPolygonId);
+      if (!selectedPolygon) {
+        throw new Error("Selected polygon not found");
+      }
+
+      const polygon = selectedPolygon.geoJSON;
+
+      // Create analysis job
+      const response = await fetchWithAuth(API_ENDPOINTS.RUT.BASE, {
+        method: "POST",
+        body: JSON.stringify({
+          tiff_file_id: selectedDemId,
+          polygon_geojson: polygon,
+          dy_freq: sampling,
+          dx: ruttingWidth,
+          apply_smoothing: gaussian,
+          gaussian_sigma: sigma,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to start analysis");
+      }
+
+      const job = await response.json();
+      setJobId(job.id);
+      setResults({
+        id: job.id,
+        status: job.status,
+        progress: job.progress,
+        total_ruts_detected: 0,
+        low_severity_count: 0,
+        medium_severity_count: 0,
+        high_severity_count: 0,
+        total_area_sqft: 0,
+      });
+
       showToast("Analysis started...", "info");
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      showToast("Analysis completed successfully!", "success");
-
-      // Here you would typically:
-      // 1. Create FormData with all files and parameters
-      // 2. POST to your backend API endpoint
-      // 3. Handle the response and download results
-
     } catch (error) {
+      setIsAnalyzing(false);
       showToast(
-        error instanceof Error ? error.message : "Analysis failed",
+        error instanceof Error ? error.message : "Failed to start analysis",
         "error"
       );
-    } finally {
-      setIsAnalyzing(false);
     }
   };
+
 
   return (
     <>
       <ToastContainer toasts={toasts} />
-      <div className="w-full bg-gray-50 border rounded-lg shadow p-2 text-[11px] text-gray-800 leading-tight">
-        <h2 className="text-[11px] font-bold border-b pb-1 mb-1.5 text-gray-700 text-center">
-          Parameters
+      <div className="w-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[13px] text-slate-100 leading-tight ring-1 ring-slate-700/50">
+        <h2 className="text-[14px] font-bold border-b border-slate-700 pb-2 mb-3 text-slate-200 text-center">
+          Rut Automatic Detection
         </h2>
 
+        {/* DEM File Selection */}
         <RowGrid
-          label="Input polygon feature"
+          label="Select DEM file"
           control={
-            <div className="flex items-center gap-1.5">
-              <input
-                type="file"
-                accept=".shp,.geojson,.json"
-                className="hidden"
-                id="polygon-file"
-                onChange={(e) => handleFileChange(e, "polygon")}
-                aria-label="Select polygon feature file"
-              />
-              <label
-                htmlFor="polygon-file"
-                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 cursor-pointer"
+            loadingFiles ? (
+              <div className="flex items-center gap-1 text-[12px] text-slate-400">
+                <Loader2 size={14} className="animate-spin" />
+                <span>Loading...</span>
+              </div>
+            ) : demFiles.length === 0 ? (
+              <span className="text-[12px] text-red-400">No DEM files found</span>
+            ) : (
+              <select
+                value={selectedDemId}
+                onChange={(e) => setSelectedDemId(e.target.value)}
+                className="text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1 max-w-[240px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                aria-label="Select DEM file"
               >
-                <FolderOpen size={12} />
-                <span className="text-[10px]">
-                  {inputPolygonFile ? inputPolygonFile.name : "Browse"}
+                {demFiles.map((file) => (
+                  <option key={file.id} value={file.id} className="bg-slate-800">
+                    {file.folder_name ? `${file.folder_name} / ${file.filename}` : file.filename}
+                  </option>
+                ))}
+              </select>
+            )
+          }
+        />
+
+        {/* Polygon Selection */}
+        <RowGrid
+          label="Select Polygon"
+          control={
+            polygons.length === 0 ? (
+              <span className="text-[12px] text-orange-400">
+                No polygons drawn. Draw a polygon on the map first.
+              </span>
+            ) : (
+              <select
+                value={selectedPolygonId}
+                onChange={(e) => setSelectedPolygonId(e.target.value)}
+                className="text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1 max-w-[240px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                aria-label="Select polygon for analysis"
+              >
+                <option value="" className="bg-slate-800">-- Select a polygon --</option>
+                {polygons.map((polygon) => (
+                  <option key={polygon.id} value={polygon.id} className="bg-slate-800">
+                    {polygon.name} ({new Date(polygon.createdAt).toLocaleTimeString()})
+                  </option>
+                ))}
+              </select>
+            )
+          }
+        />
+
+        {/* Parameters */}
+        <div className="border-t border-slate-700 pt-2 mt-2">
+          <RowGrid
+            label="Sampling frequency per 100 pixels"
+            control={
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={sampling}
+                onChange={(e) => setSampling(Number(e.target.value))}
+                className={inputBox}
+                aria-label="Sampling frequency per 100 pixels"
+              />
+            }
+          />
+
+          <RowGrid
+            label="Rutting width, dx in meters"
+            control={
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={ruttingWidth}
+                onChange={(e) => setRuttingWidth(Number(e.target.value))}
+                className={inputBox}
+                aria-label="Rutting width in meters"
+              />
+            }
+          />
+
+          <RowGrid
+            label="Apply Gaussian smoothing to DEM"
+            control={
+              <CheckboxToggle
+                checked={gaussian}
+                onChange={setGaussian}
+                label="Toggle"
+                ariaLabel="Apply Gaussian smoothing to DEM"
+              />
+            }
+          />
+
+          {gaussian && (
+            <RowGrid
+              label="Gaussian sigma, pixels"
+              control={
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  value={sigma}
+                  onChange={(e) => setSigma(Number(e.target.value))}
+                  className={inputBox}
+                  aria-label="Gaussian sigma in pixels"
+                />
+              }
+            />
+          )}
+        </div>
+
+        {/* Progress Display */}
+        {isAnalyzing && results && (
+          <div className="border-t border-slate-700 pt-2 mt-2">
+            <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Loader2 size={16} className="animate-spin text-blue-400" />
+                <span className="text-[13px] font-semibold text-blue-300">
+                  {results.status === "processing" ? "Processing..." : "Starting..."}
                 </span>
-              </label>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-blue-500 h-2.5 transition-all duration-300"
+                  style={{ width: `${results.progress}%` }}
+                />
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1 text-right">
+                {results.progress}%
+              </div>
             </div>
-          }
-        />
-
-      <RowGrid
-        label="DEM raster file"
-        control={
-          <div className="flex items-center gap-1.5">
-            <input
-              type="file"
-              accept=".tif,.tiff"
-              className="hidden"
-              id="dem-file"
-              onChange={(e) => handleFileChange(e, "dem")}
-              aria-label="Select DEM raster file"
-            />
-            <label
-              htmlFor="dem-file"
-              className="flex items-center gap-1 text-blue-600 hover:text-blue-800 cursor-pointer"
-            >
-              <FolderOpen size={12} />
-              <span className="text-[10px]">
-                {demFile ? demFile.name : "Browse"}
-              </span>
-            </label>
           </div>
-        }
-      />
+        )}
 
-      <RowGrid
-        label="Orthophoto raster file"
-        control={
-          <div className="flex items-center gap-1.5">
-            <input
-              type="file"
-              accept=".tif,.tiff"
-              className="hidden"
-              id="ortho-file"
-              onChange={(e) => handleFileChange(e, "ortho")}
-              aria-label="Select orthophoto raster file"
-            />
-            <label
-              htmlFor="ortho-file"
-              className="flex items-center gap-1 text-blue-600 hover:text-blue-800 cursor-pointer"
-            >
-              <FolderOpen size={12} />
-              <span className="text-[10px]">
-                {orthophotoFile ? orthophotoFile.name : "Browse"}
-              </span>
-            </label>
+        {/* Results Display */}
+        {!isAnalyzing && results && results.status === "completed" && (
+          <div className="border-t border-slate-700 pt-2 mt-2">
+            <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-3">
+              <div className="text-[13px] font-semibold mb-2 text-green-300">
+                ✓ Analysis Complete
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="text-slate-300">Total ruts:</div>
+                <div className="font-semibold text-slate-100">{results.total_ruts_detected}</div>
+
+                <div className="text-green-400">Low severity:</div>
+                <div className="font-semibold text-green-400">{results.low_severity_count}</div>
+
+                <div className="text-orange-400">Medium severity:</div>
+                <div className="font-semibold text-orange-400">{results.medium_severity_count}</div>
+
+                <div className="text-red-400">High severity:</div>
+                <div className="font-semibold text-red-400">{results.high_severity_count}</div>
+
+                <div className="text-slate-300">Total area:</div>
+                <div className="font-semibold text-slate-100">{results.total_area_sqft.toFixed(2)} ft²</div>
+              </div>
+
+              <div className="flex gap-2 mt-3">
+                {results.html_plot_url && (
+                  <a
+                    href={results.html_plot_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-[12px] font-medium hover:bg-blue-700 transition-colors shadow-lg"
+                  >
+                    <ExternalLink size={14} />
+                    View Interactive Plot
+                  </a>
+                )}
+
+                {results.pdf_plot_url && (
+                  <a
+                    href={results.pdf_plot_url}
+                    download
+                    className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-[12px] font-medium hover:bg-green-700 transition-colors shadow-lg"
+                  >
+                    <Download size={14} />
+                    Download PDF Report
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
-        }
-      />
+        )}
 
-      <RowGrid
-        label="Sampling frequency per 100 pixels"
-        control={
-          <input
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={sampling}
-            onChange={(e) => setSampling(Number(e.target.value))}
-            className={inputBox}
-            aria-label="Sampling frequency per 100 pixels"
-          />
-        }
-      />
+        {/* Error Display */}
+        {!isAnalyzing && results && results.status === "failed" && (
+          <div className="border-t border-slate-700 pt-2 mt-2">
+            <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold mb-2 text-red-300">
+                <AlertCircle size={16} />
+                Analysis Failed
+              </div>
+              <div className="text-[12px] text-red-400">
+                {results.error_message || "Unknown error occurred"}
+              </div>
+            </div>
+          </div>
+        )}
 
-      <RowGrid
-        label="Rutting width, dx in meters"
-        control={
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={ruttingWidth}
-            onChange={(e) => setRuttingWidth(Number(e.target.value))}
-            className={inputBox}
-            aria-label="Rutting width in meters"
-          />
-        }
-      />
-
-      <RowGrid
-        label="Try neighboring sampling frequencies"
-        control={
-          <CheckboxToggle
-            checked={tryNeighbor}
-            onChange={setTryNeighbor}
-            label="Toggle"
-            ariaLabel="Try neighboring sampling frequencies"
-          />
-        }
-      />
-
-      {tryNeighbor && (
-        <RowGrid
-          label="Neighbor range, plus or minus"
-          control={
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={neighborRange}
-              onChange={(e) => setNeighborRange(Number(e.target.value))}
-              className={inputBox}
-              aria-label="Neighbor range"
-            />
-          }
-        />
-      )}
-
-      <RowGrid
-        label="Output plot, HTML"
-        control={
-          <button
-            type="button"
-            onClick={() => handleOutputPathChange("plot")}
-            className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-            aria-label="Select output path for HTML plot"
-          >
-            <FolderOpen size={12} />
-            <span className="text-[10px]">
-              {outputPlotPath || "Browse"}
-            </span>
-          </button>
-        }
-      />
-
-      <RowGrid
-        label="Output distress line features"
-        control={
-          <button
-            type="button"
-            onClick={() => handleOutputPathChange("distress")}
-            className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-            aria-label="Select output path for distress features"
-          >
-            <FolderOpen size={12} />
-            <span className="text-[10px]">
-              {outputDistressPath || "Browse"}
-            </span>
-          </button>
-        }
-      />
-
-      <RowGrid
-        label="Apply Gaussian smoothing to DEM before analysis"
-        control={
-          <CheckboxToggle
-            checked={gaussian}
-            onChange={setGaussian}
-            label="Toggle"
-            ariaLabel="Apply Gaussian smoothing to DEM"
-          />
-        }
-      />
-
-      {gaussian && (
-        <RowGrid
-          label="Gaussian sigma, pixels"
-          control={
-            <input
-              type="number"
-              min="0.1"
-              step="0.1"
-              value={sigma}
-              onChange={(e) => setSigma(Number(e.target.value))}
-              className={inputBox}
-              aria-label="Gaussian sigma in pixels"
-            />
-          }
-        />
-      )}
-
-        <div className="pt-2 mt-1 border-t">
+        {/* Action Button */}
+        <div className="pt-3 mt-3 border-t border-slate-700">
           <button
             onClick={handleRunAnalysis}
-            disabled={isAnalyzing}
-            className={`font-bold py-1 px-2.5 rounded text-[11px] mx-auto block ${
-              isAnalyzing
-                ? "bg-gray-400 text-gray-700 cursor-not-allowed"
-                : "bg-red-700 text-white hover:bg-red-800"
+            disabled={
+              isAnalyzing ||
+              loadingFiles ||
+              demFiles.length === 0 ||
+              polygons.length === 0 ||
+              !selectedPolygonId
+            }
+            className={`font-bold py-2.5 px-4 rounded-lg text-[13px] mx-auto block transition-all shadow-lg ${
+              isAnalyzing ||
+              loadingFiles ||
+              demFiles.length === 0 ||
+              polygons.length === 0 ||
+              !selectedPolygonId
+                ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                : "bg-red-700 text-white hover:bg-red-800 hover:shadow-xl"
             }`}
           >
-            {isAnalyzing ? "Analyzing..." : "Run analysis"}
+            {isAnalyzing ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Analyzing...
+              </span>
+            ) : (
+              "Run Analysis"
+            )}
           </button>
         </div>
       </div>

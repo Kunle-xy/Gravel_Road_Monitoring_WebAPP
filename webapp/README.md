@@ -1,36 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend - GravelRoad Iowa
 
-## Getting Started
+Next.js 15 web application for the GravelRoad Iowa pavement distress analysis system.
 
-First, run the development server:
+**Author**: Kunle Oguntoye, PhD Student at Iowa State University
+**Contact**: oguntoye@iastate.edu
 
+---
+
+## Tech Stack
+
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript 5
+- **Styling**: Tailwind CSS 4
+- **UI Components**: Custom components with Lucide React icons
+- **Maps**: Leaflet 1.9+
+- **State Management**: React Context API
+- **HTTP Client**: Fetch API with custom wrapper
+- **Authentication**: JWT tokens in localStorage
+
+---
+
+## Setup
+
+### 1. Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Environment Configuration
+Create `.env.local`:
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Start Development Server
+```bash
+npm run dev
+# Opens at http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/
+├── components/              # Reusable React components
+│   ├── DistressForms/      # Distress analysis forms
+│   ├── FolderTree/         # Folder tree components
+│   ├── DashboardMap.tsx    # Main Leaflet map
+│   ├── ProfileWidget.tsx   # Sidebar with files & jobs
+│   └── MapControls.tsx     # Map drawing tools
+├── contexts/               # React Context providers
+│   ├── AuthContext.tsx     # Authentication state
+│   ├── PolygonContext.tsx  # Drawing & polygons
+│   └── ToastContext.tsx    # Notifications
+├── dashboard/              # Dashboard pages
+│   ├── page.tsx           # Main map view
+│   └── upload/            # Upload page
+└── lib/
+    └── api.ts             # API client
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Key Components
 
-## Deploy on Vercel
+### DashboardMap
+Main interactive Leaflet map with tile layers and drawing tools.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### ProfileWidget
+Collapsible sidebar showing:
+- User profile
+- Project folders with files
+- Completed analysis jobs
+- Quick download links
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### DistressForms/rut.tsx
+Rut analysis form with:
+- Parameter configuration
+- Progress tracking
+- Result downloads (HTML plot + PDF)
+
+---
+
+## API Integration
+
+All API calls use `fetchWithAuth()` from `lib/api.ts` with JWT token injection.
+
+Endpoints in `API_ENDPOINTS`:
+- `/auth/*` - Authentication
+- `/files/*` - File management
+- `/folders/*` - Project folders
+- `/rut/*` - Rut analysis
+- `/upload/*` - Multipart upload
+
+---
+
+## User Workflows
+
+1. **Login** → Enter credentials at `/login`
+2. **Upload** → Select folder, upload TIFF file
+3. **View** → Click file to display on map
+4. **Analyze** → Draw polygon, configure params, run analysis
+5. **Download** → Access results from completed jobs
+
+---
+
+## Styling
+
+Dark slate theme with Tailwind CSS:
+- Backgrounds: `bg-slate-800` to `bg-slate-900`
+- Text: `text-slate-100` to `text-slate-400`
+- Primary: `bg-blue-600`
+- Success: `bg-green-600`
+
+---
+
+**Last Updated**: November 18, 2025

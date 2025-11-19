@@ -8,6 +8,7 @@ import MapClient from "../components/MapClient";
 import DistressFormsOverlay from "../components/DistressFormsOverlay";
 import { MapProvider } from "../contexts/MapContext";
 import { DistressProvider } from "../contexts/DistressContext";
+import { PolygonProvider } from "../contexts/PolygonContext";
 import ProtectedRoute from "../components/ProtectedRoute";
 
 export default function DashboardLayout({
@@ -19,7 +20,8 @@ export default function DashboardLayout({
     <ProtectedRoute>
       <DistressProvider>
         <MapProvider>
-          <div className="h-screen overflow-hidden flex flex-col">
+          <PolygonProvider>
+            <div className="h-screen overflow-hidden flex flex-col">
             <header className="font-header shrink-0">
               <Header />
             </header>
@@ -54,7 +56,8 @@ export default function DashboardLayout({
             </div>
 
             <HomeWidget />
-          </div>
+            </div>
+          </PolygonProvider>
         </MapProvider>
       </DistressProvider>
     </ProtectedRoute>

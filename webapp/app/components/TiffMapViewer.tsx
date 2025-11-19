@@ -169,7 +169,7 @@ export default function TiffMapViewer({ fileId, className = 'h-96 w-full' }: Tif
   // Determine tile attribution and max zoom
   const isStaticTiles = tileInfo.tile_type === 'static';
   const tileAttribution = isStaticTiles
-    ? 'Static tiles (S3/CDN)'
+    ? 'Static tiles (cloud/CDN)'
     : 'Dynamic tiles (rio-tiler)';
   const maxZoom = tileInfo.max_zoom || 18;
 

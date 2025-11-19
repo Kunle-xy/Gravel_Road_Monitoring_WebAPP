@@ -115,7 +115,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
             Delete project "{folder.name}"?
           </div>
           <div className="text-xs text-white opacity-90">
-            ⚠️ WARNING: This will PERMANENTLY delete all {folder.files.length} file{folder.files.length !== 1 ? 's' : ''} in this project from both the database and S3 storage. This action cannot be undone. Type "I confirm" to delete.
+            ⚠️ WARNING: This will PERMANENTLY delete all {folder.files.length} file{folder.files.length !== 1 ? 's' : ''} in this project from both the database and cloud storage. This action cannot be undone. Type "I confirm" to delete.
           </div>
           <input
             type="text"
@@ -225,15 +225,47 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
 
       {/* Project Files - Only show when not deleting */}
       {isExpanded && !showDeleteConfirm && (
-        <div className="ml-6 mt-2 space-y-2 border-l border-white/10 pl-3">
+        <div className="ml-6 mt-2 space-y-3 border-l border-white/10 pl-3">
           {folder.files.length === 0 ? (
             <div className="text-xs text-slate-400 italic py-2">
               No files in this project
             </div>
           ) : (
-            folder.files.map((file) => (
-              <TiffFileItem key={file.id} file={file} onDelete={onDelete} />
-            ))
+            <>
+              {/* DEM Files Section */}
+              {(() => {
+                const demFiles = folder.files.filter(f => f.file_type === 'DEM');
+                return demFiles.length > 0 && (
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
+                      DEM Files ({demFiles.length})
+                    </div>
+                    <div className="space-y-2">
+                      {demFiles.map((file) => (
+                        <TiffFileItem key={file.id} file={file} onDelete={onDelete} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ORTHOPHOTO Files Section */}
+              {(() => {
+                const orthoFiles = folder.files.filter(f => f.file_type === 'ORTHOPHOTO');
+                return orthoFiles.length > 0 && (
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
+                      Orthophoto Files ({orthoFiles.length})
+                    </div>
+                    <div className="space-y-2">
+                      {orthoFiles.map((file) => (
+                        <TiffFileItem key={file.id} file={file} onDelete={onDelete} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       )}

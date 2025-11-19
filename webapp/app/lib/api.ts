@@ -59,4 +59,12 @@ export const API_ENDPOINTS = {
     ADD_FILE: (folderId: string, fileId: string) => `/folders/${folderId}/files/${fileId}`,
     REMOVE_FILE: (folderId: string, fileId: string) => `/folders/${folderId}/files/${fileId}`,
   },
+  RUT: {
+    BASE: '/rut',
+    GET: (jobId: string) => `/rut/${jobId}`,
+    STATUS: (jobId: string) => `/rut/${jobId}/status`,
+    BY_FILE: (tiffFileId: string) => `/rut/file/${tiffFileId}`,
+    DELETE: (jobId: string) => `/rut/${jobId}`,
+    COMPLETED: '/rut/completed',
+  },
 } as const;

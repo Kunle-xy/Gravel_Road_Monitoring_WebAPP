@@ -12,6 +12,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useMap } from "../contexts/MapContext";
+import { usePolygons } from "../contexts/PolygonContext";
 
 // fix default marker assets in Next
 import iconUrl from "leaflet/dist/images/marker-icon.png";
@@ -377,6 +378,7 @@ export default function Map() {
   const [showLabels, setShowLabels] = React.useState(true);
   const [polygons, setPolygons] = React.useState<L.Polygon[]>([]);
   const [mapInstance, setMapInstance] = React.useState<L.Map | null>(null);
+  const { addPolygon, clearPolygons: clearPolygonsContext, polygons: savedPolygons } = usePolygons();
   const center: [number, number] = [41.878, -93.097];
 
   const handlePolygonComplete = React.useCallback((polygon: L.Polygon) => {
@@ -384,15 +386,78 @@ export default function Map() {
       polygon.addTo(mapInstance);
       setPolygons(prev => [...prev, polygon]);
       setMode("pan");
+
+      // Convert Leaflet polygon to GeoJSON and save to context
+      const latLngs = polygon.getLatLngs()[0] as L.LatLng[];
+      const coordinates = latLngs.map(ll => [ll.lng, ll.lat]);
+      // Close the polygon if not already closed
+      if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] ||
+          coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
+        coordinates.push(coordinates[0]);
+      }
+
+      const geoJSON = {
+        type: "Polygon" as const,
+        coordinates: [coordinates],
+      };
+
+      // Get bounds for the polygon
+      const bounds = polygon.getBounds();
+      const polygonBounds: [[number, number], [number, number]] = [
+        [bounds.getSouth(), bounds.getWest()],
+        [bounds.getNorth(), bounds.getEast()]
+      ];
+
+      // Save to context with auto-generated name
+      const polygonCount = savedPolygons.length + 1;
+      const polygonName = `Polygon ${polygonCount}`;
+
+      addPolygon({
+        name: polygonName,
+        geoJSON,
+        bounds: polygonBounds,
+      });
+
+      // Add label to polygon center
+      const center = polygon.getBounds().getCenter();
+      const label = L.marker(center, {
+        icon: L.divIcon({
+          className: 'polygon-label',
+          html: `<div style="
+            background: rgba(37, 99, 235, 0.9);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          ">${polygonName}</div>`,
+          iconSize: [60, 20],
+        }),
+      }).addTo(mapInstance);
+
+      // Store label with polygon for later removal
+      (polygon as L.Polygon & { label?: L.Marker }).label = label;
     }
-  }, [mapInstance]);
+  }, [mapInstance, addPolygon, savedPolygons.length]);
 
   const handleClearPolygons = React.useCallback(() => {
     if (mapInstance) {
-      polygons.forEach(polygon => mapInstance.removeLayer(polygon));
+      polygons.forEach(polygon => {
+        // Remove the polygon itself
+        mapInstance.removeLayer(polygon);
+
+        // Remove the label if it exists
+        const label = (polygon as L.Polygon & { label?: L.Marker }).label;
+        if (label) {
+          mapInstance.removeLayer(label);
+        }
+      });
       setPolygons([]);
+      clearPolygonsContext();
     }
-  }, [mapInstance, polygons]);
+  }, [mapInstance, polygons, clearPolygonsContext]);
 
   return (
     <div className="relative h-screen w-full overflow-hidden rounded-xl z-0">
