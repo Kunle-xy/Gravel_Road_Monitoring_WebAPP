@@ -27,6 +27,18 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
     });
 
     clearTimeout(timeoutId);
+
+    // Handle 401 Unauthorized - token expired or invalid
+    if (response.status === 401 && typeof window !== 'undefined') {
+      console.error('Authentication failed - clearing token and redirecting to login');
+      localStorage.removeItem('access_token');
+
+      // Show a brief message before redirecting
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
+    }
+
     return response;
   } catch (error) {
     clearTimeout(timeoutId);

@@ -165,7 +165,7 @@ export default function AuthPage() {
         </div>
 
         {/* Right Side - Auth Form */}
-        <div className="w-full lg:w-1/2 flex items-center justify-center p-6 bg-gradient-to-br from-gray-50 to-red-50">
+        <div className="w-full lg:w-1/2 flex items-center justify-center p-6 bg-linear-to-br from-gray-50 to-red-50">
           <div className="w-full max-w-md">
             <div className="bg-white rounded-2xl shadow-xl p-8">
               

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Download } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
 import { usePolygons } from "@/app/contexts/PolygonContext";
+import html2canvas from "html2canvas";
 
 function RowGrid({
   label,
@@ -287,6 +288,23 @@ export default function RutForm() {
     setJobId(null);
 
     try {
+      // Capture screenshot before analysis
+      let screenshotBase64 = null;
+      try {
+        showToast("Capturing screenshot...", "info");
+        const canvas = await html2canvas(document.body, {
+          allowTaint: true,
+          useCORS: true,
+          scale: 1,
+          windowWidth: window.innerWidth,
+          windowHeight: window.innerHeight,
+        });
+        screenshotBase64 = canvas.toDataURL("image/png").split(",")[1]; // Get base64 without the data:image/png;base64, prefix
+      } catch (screenshotError) {
+        console.error("Failed to capture screenshot:", screenshotError);
+        // Continue without screenshot
+      }
+
       // Get polygon from context
       const selectedPolygon = polygons.find(p => p.id === selectedPolygonId);
       if (!selectedPolygon) {
@@ -305,6 +323,7 @@ export default function RutForm() {
           dx: ruttingWidth,
           apply_smoothing: gaussian,
           gaussian_sigma: sigma,
+          screenshot_base64: screenshotBase64,
         }),
       });
 
@@ -340,7 +359,7 @@ export default function RutForm() {
   return (
     <>
       <ToastContainer toasts={toasts} />
-      <div className="w-full bg-gradient-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[13px] text-slate-100 leading-tight ring-1 ring-slate-700/50">
+      <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[13px] text-slate-100 leading-tight ring-1 ring-slate-700/50">
         <h2 className="text-[14px] font-bold border-b border-slate-700 pb-2 mb-3 text-slate-200 text-center">
           Rut Automatic Detection
         </h2>
@@ -360,7 +379,7 @@ export default function RutForm() {
               <select
                 value={selectedDemId}
                 onChange={(e) => setSelectedDemId(e.target.value)}
-                className="text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1 max-w-[240px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1 max-w-60 text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
                 aria-label="Select DEM file"
               >
                 {demFiles.map((file) => (
@@ -385,7 +404,7 @@ export default function RutForm() {
               <select
                 value={selectedPolygonId}
                 onChange={(e) => setSelectedPolygonId(e.target.value)}
-                className="text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1 max-w-[240px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1 max-w-60 text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
                 aria-label="Select polygon for analysis"
               >
                 <option value="" className="bg-slate-800">-- Select a polygon --</option>

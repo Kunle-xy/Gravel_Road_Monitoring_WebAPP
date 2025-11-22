@@ -2,7 +2,7 @@
 import Link from "next/link";
 import React, { useEffect, useState, useCallback, memo, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload, ArrowDownUp, FileText, Download, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload, ArrowDownUp, FileText, Download, ExternalLink, ChevronDown, ChevronUp, Info, Trash2 } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "../lib/api";
 import TiffFileItem from "./TiffFiles/TiffFileItem";
 import FolderTreeItem from "./FolderTree/FolderTreeItem";
@@ -46,6 +46,11 @@ interface CompletedJob {
   completed_at: string;
   total_ruts_detected: number;
   total_area_sqft: number;
+  dy_freq?: number;
+  dx?: number;
+  apply_smoothing?: boolean;
+  gaussian_sigma?: number;
+  polygon_geojson?: any;
 }
 
 function ProfileWidget() {
@@ -59,7 +64,7 @@ function ProfileWidget() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [sortBy, setSortBy] = useState<'name' | 'fileCount'>('fileCount');
-  const [showCompletedJobs, setShowCompletedJobs] = useState(true);
+  const [showCompletedJobs, setShowCompletedJobs] = useState(false);
   const { user, logout, isAuthenticated } = useAuth();
 
   // Resizable width state
@@ -155,9 +160,13 @@ function ProfileWidget() {
           alert(`⚠️ Tile generation failed for ${failedFiles.length} file(s):\n\n${errorMessages}\n\nPlease delete and re-upload these files.`);
         }
       } else if (foldersResponse.status === 401 || filesResponse.status === 401) {
-        // Token expired or invalid
-        setError('Authentication failed. Please login again.');
+        // Token expired or invalid - clear token and redirect to homepage
         console.error('Authentication failed when fetching files');
+        localStorage.removeItem('access_token');
+        setError('Authentication failed. Redirecting to login...');
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1000);
       } else {
         setError('Failed to load files. Please try again.');
       }
@@ -244,6 +253,42 @@ function ProfileWidget() {
     }
   };
 
+  // Delete job handler
+  const handleDeleteJob = async (jobId: string, completedDate: string) => {
+    if (!confirm(`Are you sure you want to delete the rut analysis job from ${new Date(completedDate).toLocaleDateString()}?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuth(API_ENDPOINTS.RUT.DELETE(jobId), {
+        method: 'DELETE',
+      });
+
+      if (response.ok || response.status === 204) {
+        // Refresh completed jobs list after deletion
+        await fetchCompletedJobs();
+      } else {
+        alert('Failed to delete job. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to delete job:', error);
+      alert('Failed to delete job. Please try again.');
+    }
+  };
+
+  // Helper function to get DEM filename from tiff_file_id
+  const getDemFilename = (tiffFileId: string): string => {
+    // Search in all folders
+    for (const folder of folders) {
+      const file = folder.files.find(f => f.id === tiffFileId);
+      if (file) return file.filename;
+    }
+    // Search in uncategorized files
+    const file = uncategorizedFiles.find(f => f.id === tiffFileId);
+    if (file) return file.filename;
+    return 'Unknown DEM';
+  };
+
   // Create folder handler
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
@@ -290,7 +335,7 @@ function ProfileWidget() {
       }}
       className={`
         relative h-full p-4 text-slate-100
-        bg-gradient-to-b from-slate-900 to-slate-800
+        bg-linear-to-b from-slate-900 to-slate-800
         ring-1 ring-inset ring-slate-700/50
         flex flex-col
         ${isResizing ? 'select-none' : ''}
@@ -417,42 +462,63 @@ function ProfileWidget() {
                 </div>
                 {showCompletedJobs && (
                   <div className="space-y-2">
-                    {completedJobs.map((job) => (
-                      <div
-                        key={job.id}
-                        className="bg-green-900/20 border border-green-700/30 rounded-lg p-2 text-xs"
-                      >
-                        <div className="text-slate-300 mb-1 flex items-center gap-1">
-                          <span className="font-medium">
-                            {new Date(job.completed_at).toLocaleDateString()}
-                          </span>
-                          <span className="text-slate-500">•</span>
-                          <span className="text-green-400">{job.total_ruts_detected} ruts</span>
+                    {completedJobs.map((job) => {
+                      const demFilename = getDemFilename(job.tiff_file_id);
+                      const tooltipContent = `DEM: ${demFilename}\nSampling: ${job.dy_freq || 3} per 100px\nRutting Width: ${job.dx || 0.1}m\nSmoothing: ${job.apply_smoothing ? `Yes (σ=${job.gaussian_sigma || 1.0})` : 'No'}`;
+
+                      return (
+                        <div
+                          key={job.id}
+                          className="bg-green-900/20 border border-green-700/30 rounded-lg p-2 text-xs"
+                        >
+                          <div className="text-slate-300 mb-1 flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">
+                                {new Date(job.completed_at).toLocaleDateString()}
+                              </span>
+                              <div className="group relative">
+                                <Info className="h-3 w-3 text-slate-400 hover:text-blue-400 cursor-help transition-colors" />
+                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-48 bg-slate-900 border border-slate-700 rounded-lg p-2 text-[10px] shadow-xl">
+                                  <div className="space-y-1 whitespace-pre-line">
+                                    <div><span className="text-slate-400">DEM:</span> <span className="text-slate-200">{demFilename}</span></div>
+                                    <div><span className="text-slate-400">Sampling:</span> <span className="text-slate-200">{job.dy_freq || 3} per 100px</span></div>
+                                    <div><span className="text-slate-400">Width:</span> <span className="text-slate-200">{job.dx || 0.1}m</span></div>
+                                    <div><span className="text-slate-400">Smoothing:</span> <span className="text-slate-200">{job.apply_smoothing ? `Yes (σ=${job.gaussian_sigma || 1.0})` : 'No'}</span></div>
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="text-slate-500">•</span>
+                              <span className="text-green-400">{job.total_ruts_detected} ruts</span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteJob(job.id, job.completed_at)}
+                              className="p-1 hover:bg-red-600/30 rounded transition-colors"
+                              title="Delete this job"
+                            >
+                              <Trash2 className="h-3 w-3 text-red-400 hover:text-red-300" />
+                            </button>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => window.open(job.html_plot_url, '_blank', 'noopener,noreferrer')}
+                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[10px] transition-colors cursor-pointer"
+                              title="View interactive plot"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              <span>Plot</span>
+                            </button>
+                            <button
+                              onClick={() => window.open(job.pdf_plot_url, '_blank', 'noopener,noreferrer')}
+                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[10px] transition-colors cursor-pointer"
+                              title="View PDF report"
+                            >
+                              <Download className="h-3 w-3" />
+                              <span>PDF</span>
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex gap-1.5">
-                          <a
-                            href={job.html_plot_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[10px] transition-colors"
-                            title="View interactive plot"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            <span>Plot</span>
-                          </a>
-                          <a
-                            href={job.pdf_plot_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[10px] transition-colors"
-                            title="Download PDF report"
-                          >
-                            <Download className="h-3 w-3" />
-                            <span>PDF</span>
-                          </a>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

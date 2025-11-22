@@ -56,8 +56,14 @@ export const getCurrentUser = async (): Promise<User | null> => {
 
     if (!response.ok) {
       if (response.status === 401) {
-        // Token is invalid or expired
+        // Token is invalid or expired - redirect to login
+        console.error('Authentication failed - redirecting to login');
         removeToken();
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 500);
+        }
       }
       throw new Error('Failed to fetch user');
     }
