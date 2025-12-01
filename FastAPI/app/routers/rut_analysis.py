@@ -57,8 +57,8 @@ async def create_rut_analysis(
     db.commit()
     db.refresh(job)
 
-    # Start Celery task
-    task = analyze_ruts_task.delay(str(job.id))
+    # Start Celery task with optional screenshot
+    task = analyze_ruts_task.delay(str(job.id), analysis_request.screenshot_base64)
 
     # Update job with Celery task ID
     job.celery_task_id = task.id
@@ -68,6 +68,53 @@ async def create_rut_analysis(
     return job
 
 
+# Specific routes must come BEFORE parametrized routes to avoid conflicts
+@router.get("/completed", response_model=List[RutAnalysisResponse])
+async def get_completed_analyses(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all completed rut analysis jobs for the current user.
+    """
+    jobs = db.query(RutAnalysisJob).filter(
+        RutAnalysisJob.user_id == current_user.id,
+        RutAnalysisJob.status == "completed"
+    ).order_by(RutAnalysisJob.completed_at.desc()).all()
+
+    return jobs
+
+
+@router.get("/file/{tiff_file_id}", response_model=List[RutAnalysisResponse])
+async def get_analyses_for_file(
+    tiff_file_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all rut analysis jobs for a specific TIFF file.
+    """
+    # Verify file belongs to user
+    tiff_file = db.query(TiffFile).filter(
+        TiffFile.id == tiff_file_id,
+        TiffFile.user_id == current_user.id
+    ).first()
+
+    if not tiff_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="TIFF file not found or access denied"
+        )
+
+    jobs = db.query(RutAnalysisJob).filter(
+        RutAnalysisJob.tiff_file_id == tiff_file_id,
+        RutAnalysisJob.user_id == current_user.id
+    ).order_by(RutAnalysisJob.created_at.desc()).all()
+
+    return jobs
+
+
+# Parametrized routes come after specific routes
 @router.get("/{job_id}", response_model=RutAnalysisResponse)
 async def get_rut_analysis(
     job_id: uuid.UUID,
@@ -124,51 +171,6 @@ async def get_rut_analysis_status(
         high_severity_count=job.high_severity_count,
         total_area_sqft=job.total_area_sqft
     )
-
-
-@router.get("/completed", response_model=List[RutAnalysisResponse])
-async def get_completed_analyses(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get all completed rut analysis jobs for the current user.
-    """
-    jobs = db.query(RutAnalysisJob).filter(
-        RutAnalysisJob.user_id == current_user.id,
-        RutAnalysisJob.status == "completed"
-    ).order_by(RutAnalysisJob.completed_at.desc()).all()
-
-    return jobs
-
-
-@router.get("/file/{tiff_file_id}", response_model=List[RutAnalysisResponse])
-async def get_analyses_for_file(
-    tiff_file_id: uuid.UUID,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get all rut analysis jobs for a specific TIFF file.
-    """
-    # Verify file belongs to user
-    tiff_file = db.query(TiffFile).filter(
-        TiffFile.id == tiff_file_id,
-        TiffFile.user_id == current_user.id
-    ).first()
-
-    if not tiff_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="TIFF file not found or access denied"
-        )
-
-    jobs = db.query(RutAnalysisJob).filter(
-        RutAnalysisJob.tiff_file_id == tiff_file_id,
-        RutAnalysisJob.user_id == current_user.id
-    ).order_by(RutAnalysisJob.created_at.desc()).all()
-
-    return jobs
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)

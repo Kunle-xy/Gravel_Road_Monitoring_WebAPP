@@ -117,6 +117,7 @@ class RutAnalysisCreate(BaseModel):
     dx: Optional[float] = 0.1  # Rutting width in meters
     apply_smoothing: Optional[bool] = False
     gaussian_sigma: Optional[float] = 1.0
+    screenshot_base64: Optional[str] = None  # Base64 encoded screenshot
 
 class RutAnalysisResponse(BaseModel):
     id: uuid_lib.UUID

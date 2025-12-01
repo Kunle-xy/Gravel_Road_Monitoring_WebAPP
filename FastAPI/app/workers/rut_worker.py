@@ -564,46 +564,118 @@ def _generate_html_plot(results: Dict[str, Any], job_id: str) -> str:
     return fig.to_html()
 
 
-def _generate_pdf_from_results(results: Dict[str, Any], job_id: str) -> bytes:
+def _generate_pdf_from_results(results: Dict[str, Any], job_id: str, screenshot_base64: Optional[str] = None) -> bytes:
     """
-    Generate PDF report from analysis results.
-    Converts Plotly figure to static image and embeds in PDF.
+    Generate PDF report from analysis results with 4 pages:
+    - Page 1: Screenshot + summary statistics
+    - Pages 2-4: Cross-section plots (10 per page)
 
     Args:
         results: Analysis results dictionary
         job_id: Job ID for logging
+        screenshot_base64: Optional base64 encoded screenshot
 
     Returns:
         PDF content as bytes
     """
     try:
-        logger.info(f"Job {job_id}: Generating PDF report")
+        logger.info(f"Job {job_id}: Generating multi-page PDF report")
 
-        # Create the figure
-        fig = _create_plot_figure(results)
+        cross_sections = results.get('cross_sections', [])
 
-        # Convert figure to static image (PNG)
-        try:
-            img_bytes = fig.to_image(format="png", width=1600, height=1200)
-            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-            plot_content = f'<img src="data:image/png;base64,{img_base64}" style="width:100%; max-width:1600px; height:auto;" />'
-            logger.info(f"Job {job_id}: Converted plot to static image for PDF")
-        except Exception as img_error:
-            logger.warning(f"Job {job_id}: Failed to convert to image: {img_error}. Using text summary instead.")
-            # Fallback to text summary if image conversion fails
-            plot_content = f"""
-            <div style="padding: 20px; background-color: #f5f5f5; border-radius: 5px;">
-                <h2>Analysis Summary</h2>
-                <p><strong>Total Ruts Detected:</strong> {results['total_ruts_detected']}</p>
-                <p><strong>Total Area:</strong> {results['total_area_sqft']:.2f} ft²</p>
-                <p><strong>Low Severity:</strong> {results['low_severity_count']}</p>
-                <p><strong>Medium Severity:</strong> {results['medium_severity_count']}</p>
-                <p><strong>High Severity:</strong> {results['high_severity_count']}</p>
-                <p><em>Note: Plot visualization could not be generated. Please view the interactive HTML version.</em></p>
+        # Page 1: Screenshot + Summary
+        screenshot_html = ""
+        if screenshot_base64:
+            screenshot_html = f'<img src="data:image/png;base64,{screenshot_base64}" style="width:100%; max-width:100%; height:auto; margin-bottom: 20px; border: 1px solid #ddd;" />'
+
+        summary_html = f"""
+        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin-top: 20px;">
+            <h2 style="margin-top: 0; color: #333;">Analysis Summary</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                <div><strong>Total Ruts Detected:</strong> {results['total_ruts_detected']}</div>
+                <div><strong>Total Area:</strong> {results['total_area_sqft']:.2f} ft²</div>
+                <div style="color: green;"><strong>Low Severity:</strong> {results['low_severity_count']}</div>
+                <div style="color: orange;"><strong>Medium Severity:</strong> {results['medium_severity_count']}</div>
+                <div style="color: red;"><strong>High Severity:</strong> {results['high_severity_count']}</div>
+            </div>
+        </div>
+        """
+
+        page1_html = f"""
+        <div class="page">
+            <div class="header">
+                <h1>Rut Distress Analysis Report</h1>
+                <p>Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+                <p>Job ID: {job_id}</p>
+            </div>
+            <div class="content">
+                {screenshot_html}
+                {summary_html}
+            </div>
+        </div>
+        """
+
+        # Pages 2-4: Cross-section plots (10 per page)
+        plot_pages_html = ""
+        plots_per_page = 10
+
+        for page_idx in range(3):  # 3 pages for plots
+            start_idx = page_idx * plots_per_page
+            end_idx = min(start_idx + plots_per_page, len(cross_sections))
+            page_sections = cross_sections[start_idx:end_idx]
+
+            if not page_sections:
+                break
+
+            # Create individual plot figures for this page
+            plots_html = ""
+            for idx, cs in enumerate(page_sections):
+                global_idx = start_idx + idx
+
+                # Create a simple plot using plotly
+                try:
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Scatter(
+                            x=cs['distances'],
+                            y=cs['elevations'],
+                            mode='lines',
+                            line=dict(color='blue', width=2),
+                            name=f"Section {global_idx+1}"
+                        )
+                    )
+                    fig.update_layout(
+                        title=f"Cross-Section {global_idx+1}",
+                        xaxis_title="Distance (m)",
+                        yaxis_title="Elevation (m)",
+                        template="simple_white",
+                        height=250,
+                        width=400,
+                        margin=dict(l=50, r=20, t=40, b=40),
+                        showlegend=False
+                    )
+
+                    # Convert to image
+                    img_bytes = fig.to_image(format="png", width=400, height=250)
+                    img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                    plots_html += f'<div class="plot-item"><img src="data:image/png;base64,{img_base64}" /></div>'
+                except Exception as plot_error:
+                    logger.warning(f"Job {job_id}: Failed to create plot {global_idx+1}: {plot_error}")
+                    plots_html += f'<div class="plot-item"><p>Plot {global_idx+1} unavailable</p></div>'
+
+            plot_pages_html += f"""
+            <div class="page">
+                <div class="header">
+                    <h2>Cross-Section Elevation Profiles - Page {page_idx + 2}</h2>
+                    <p>Showing sections {start_idx+1} to {end_idx}</p>
+                </div>
+                <div class="plots-grid">
+                    {plots_html}
+                </div>
             </div>
             """
 
-        # Create HTML with embedded image
+        # Complete HTML document
         pdf_html = f"""
         <!DOCTYPE html>
         <html>
@@ -617,7 +689,14 @@ def _generate_pdf_from_results(results: Dict[str, Any], job_id: str) -> bytes:
                 body {{
                     font-family: Arial, sans-serif;
                     margin: 0;
+                    padding: 0;
+                }}
+                .page {{
+                    page-break-after: always;
                     padding: 20px;
+                }}
+                .page:last-child {{
+                    page-break-after: auto;
                 }}
                 .header {{
                     text-align: center;
@@ -625,33 +704,52 @@ def _generate_pdf_from_results(results: Dict[str, Any], job_id: str) -> bytes:
                     padding-bottom: 10px;
                     border-bottom: 2px solid #333;
                 }}
+                .header h1 {{
+                    margin: 0 0 10px 0;
+                    font-size: 24px;
+                }}
+                .header h2 {{
+                    margin: 0 0 10px 0;
+                    font-size: 18px;
+                }}
+                .header p {{
+                    margin: 5px 0;
+                    font-size: 12px;
+                    color: #666;
+                }}
                 .content {{
-                    text-align: center;
                     margin: 20px 0;
+                }}
+                .plots-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 15px;
+                    margin-top: 20px;
+                }}
+                .plot-item {{
+                    text-align: center;
+                    page-break-inside: avoid;
+                }}
+                .plot-item img {{
+                    width: 100%;
+                    height: auto;
+                    border: 1px solid #ddd;
                 }}
                 .footer {{
                     position: fixed;
-                    bottom: 0;
+                    bottom: 10px;
                     width: 100%;
                     text-align: center;
                     font-size: 10px;
                     color: #666;
-                    padding: 10px 0;
                 }}
             </style>
         </head>
         <body>
-            <div class="header">
-                <h1>Rut Distress Analysis Report</h1>
-                <p>Generated on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
-                <p>Job ID: {job_id}</p>
-            </div>
-            <div class="content">
-                {plot_content}
-            </div>
+            {page1_html}
+            {plot_pages_html}
             <div class="footer">
-                <p>Generated by GravelRoad Iowa - Rut Analysis System</p>
-                <p>Contact: oguntoye@iastate.edu</p>
+                <p>Generated by GravelRoad Iowa - Rut Analysis System | Contact: oguntoye@iastate.edu</p>
             </div>
         </body>
         </html>
@@ -660,7 +758,7 @@ def _generate_pdf_from_results(results: Dict[str, Any], job_id: str) -> bytes:
         # Convert HTML to PDF
         pdf_bytes = HTML(string=pdf_html).write_pdf()
 
-        logger.info(f"Job {job_id}: PDF generated successfully, size={len(pdf_bytes)} bytes")
+        logger.info(f"Job {job_id}: Multi-page PDF generated successfully, size={len(pdf_bytes)} bytes")
         return pdf_bytes
 
     except Exception as e:
@@ -669,10 +767,14 @@ def _generate_pdf_from_results(results: Dict[str, Any], job_id: str) -> bytes:
 
 
 @celery_app.task(bind=True)
-def analyze_ruts_task(self, job_id: str):
+def analyze_ruts_task(self, job_id: str, screenshot_base64: Optional[str] = None):
     """
     Celery task to analyze ruts in a polygon.
     Extracts only the polygon extent from the cloud-stored GeoTIFF.
+
+    Args:
+        job_id: Job ID to process
+        screenshot_base64: Optional base64 encoded screenshot for PDF report
     """
     db = SessionLocal()
 
@@ -775,7 +877,7 @@ def analyze_ruts_task(self, job_id: str):
         db.commit()
 
         try:
-            pdf_bytes = _generate_pdf_from_results(results, job_id)
+            pdf_bytes = _generate_pdf_from_results(results, job_id, screenshot_base64)
             pdf_s3_key = f"rut_analysis/{job.user_id}/{job_id}/report.pdf"
 
             # Upload PDF to S3
