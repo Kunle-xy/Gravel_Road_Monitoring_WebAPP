@@ -113,10 +113,12 @@ class FolderWithFilesResponse(BaseModel):
 class RutAnalysisCreate(BaseModel):
     tiff_file_id: uuid_lib.UUID
     polygon_geojson: Dict[str, Any]  # GeoJSON polygon
-    dy_freq: Optional[int] = 3  # Sampling frequency per 100 pixels
+    dy_freq: Optional[int] = 3  # Sampling frequency per 100 pixels (whole integers only)
     dx: Optional[float] = 0.1  # Rutting width in meters
     apply_smoothing: Optional[bool] = False
     gaussian_sigma: Optional[float] = 1.0
+    neighbor_eval: Optional[bool] = False  # Try neighboring sampling frequencies
+    neighbor_range: Optional[int] = 2  # Plus or minus range for neighbor frequencies
     screenshot_base64: Optional[str] = None  # Base64 encoded screenshot
 
 class RutAnalysisResponse(BaseModel):
@@ -128,6 +130,8 @@ class RutAnalysisResponse(BaseModel):
     dx: float
     apply_smoothing: bool
     gaussian_sigma: float
+    neighbor_eval: bool
+    neighbor_range: int
     status: str
     progress: int
     error_message: Optional[str] = None

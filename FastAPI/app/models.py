@@ -92,6 +92,8 @@ class RutAnalysisJob(Base):
     dx = Column(Float, default=0.1)  # Rutting width in meters
     apply_smoothing = Column(Boolean, default=False)  # Apply Gaussian smoothing
     gaussian_sigma = Column(Float, default=1.0)  # Gaussian sigma in pixels
+    neighbor_eval = Column(Boolean, default=False)  # Try neighboring sampling frequencies
+    neighbor_range = Column(Integer, default=2)  # Plus or minus range for neighbor frequencies
 
     # Job status
     status = Column(String(50), default="pending")  # pending, processing, completed, failed

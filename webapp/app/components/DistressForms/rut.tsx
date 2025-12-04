@@ -121,6 +121,8 @@ export default function RutForm() {
   const [ruttingWidth, setRuttingWidth] = useState(0.1);
   const [gaussian, setGaussian] = useState(false);
   const [sigma, setSigma] = useState(1.0);
+  const [neighborEval, setNeighborEval] = useState(false);
+  const [neighborRange, setNeighborRange] = useState(2);
 
   // Analysis state
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -277,6 +279,10 @@ export default function RutForm() {
       showToast("Gaussian sigma must be greater than 0");
       return false;
     }
+    if (neighborEval && neighborRange <= 0) {
+      showToast("Neighbor range must be greater than 0");
+      return false;
+    }
     return true;
   };
 
@@ -323,6 +329,8 @@ export default function RutForm() {
           dx: ruttingWidth,
           apply_smoothing: gaussian,
           gaussian_sigma: sigma,
+          neighbor_eval: neighborEval,
+          neighbor_range: neighborRange,
           screenshot_base64: screenshotBase64,
         }),
       });
@@ -474,6 +482,35 @@ export default function RutForm() {
                   onChange={(e) => setSigma(Number(e.target.value))}
                   className={inputBox}
                   aria-label="Gaussian sigma in pixels"
+                />
+              }
+            />
+          )}
+
+          <RowGrid
+            label="Try neighboring sampling frequencies"
+            control={
+              <CheckboxToggle
+                checked={neighborEval}
+                onChange={setNeighborEval}
+                label="Toggle"
+                ariaLabel="Try neighboring sampling frequencies"
+              />
+            }
+          />
+
+          {neighborEval && (
+            <RowGrid
+              label="Neighbor frequency range (±)"
+              control={
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={neighborRange}
+                  onChange={(e) => setNeighborRange(Number(e.target.value))}
+                  className={inputBox}
+                  aria-label="Plus or minus range for neighbor frequencies"
                 />
               }
             />

@@ -37,6 +37,92 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Deduct value lookup table (Density % -> Low/Medium/High deduct values)
+DEDUCT_TABLE = {
+    0: {"Low": 0, "Medium": 0, "High": 0},
+    2: {"Low": 3, "Medium": 4, "High": 5},
+    4: {"Low": 6, "Medium": 7, "High": 8},
+    6: {"Low": 9, "Medium": 10, "High": 12},
+    8: {"Low": 12, "Medium": 14, "High": 16},
+    10: {"Low": 15, "Medium": 17, "High": 20},
+    12: {"Low": 17, "Medium": 19, "High": 22},
+    14: {"Low": 18, "Medium": 21, "High": 24},
+    16: {"Low": 19, "Medium": 22, "High": 26},
+    18: {"Low": 20, "Medium": 23, "High": 27},
+    20: {"Low": 21, "Medium": 24, "High": 28},
+    22: {"Low": 22, "Medium": 26, "High": 29},
+    24: {"Low": 23, "Medium": 27, "High": 31},
+    26: {"Low": 23, "Medium": 28, "High": 32},
+    28: {"Low": 24, "Medium": 29, "High": 33},
+    30: {"Low": 24, "Medium": 29, "High": 33},
+    32: {"Low": 25, "Medium": 30, "High": 34},
+    34: {"Low": 25, "Medium": 31, "High": 36},
+    36: {"Low": 26, "Medium": 31, "High": 37},
+    38: {"Low": 26, "Medium": 32, "High": 38},
+    40: {"Low": 26, "Medium": 32, "High": 38},
+    42: {"Low": 27, "Medium": 33, "High": 39},
+    44: {"Low": 27, "Medium": 33, "High": 40},
+    46: {"Low": 27, "Medium": 34, "High": 41},
+    48: {"Low": 27, "Medium": 34, "High": 42},
+    50: {"Low": 27, "Medium": 34, "High": 42},
+    52: {"Low": 28, "Medium": 35, "High": 43},
+    54: {"Low": 28, "Medium": 35, "High": 44},
+    56: {"Low": 28, "Medium": 35, "High": 45},
+    58: {"Low": 28, "Medium": 35, "High": 45},
+    60: {"Low": 28, "Medium": 35, "High": 46},
+    62: {"Low": 28, "Medium": 36, "High": 47},
+    64: {"Low": 29, "Medium": 36, "High": 48},
+    66: {"Low": 29, "Medium": 36, "High": 48},
+    68: {"Low": 29, "Medium": 36, "High": 49},
+    70: {"Low": 29, "Medium": 36, "High": 50},
+    72: {"Low": 29, "Medium": 37, "High": 50},
+    74: {"Low": 29, "Medium": 37, "High": 51},
+    76: {"Low": 29, "Medium": 37, "High": 51},
+    78: {"Low": 29, "Medium": 37, "High": 52},
+    80: {"Low": 29, "Medium": 37, "High": 52},
+    82: {"Low": 30, "Medium": 37, "High": 53},
+    84: {"Low": 30, "Medium": 37, "High": 53},
+    86: {"Low": 30, "Medium": 38, "High": 54},
+    88: {"Low": 30, "Medium": 38, "High": 54},
+    90: {"Low": 30, "Medium": 37, "High": 54},
+    92: {"Low": 30, "Medium": 38, "High": 55},
+    94: {"Low": 30, "Medium": 38, "High": 55},
+    96: {"Low": 30, "Medium": 38, "High": 56},
+    98: {"Low": 30, "Medium": 38, "High": 56},
+    100: {"Low": 30, "Medium": 38, "High": 56}
+}
+
+def _get_deduct_value(density_percent: float, severity: str) -> int:
+    """
+    Get deduct value from lookup table based on density percentage and severity.
+    Uses linear interpolation for values between table entries.
+
+    Args:
+        density_percent: Density percentage (0-100)
+        severity: 'Low', 'Medium', or 'High'
+
+    Returns:
+        Deduct value (integer)
+    """
+    # Clamp density to 0-100
+    density_percent = max(0, min(100, density_percent))
+
+    # Round to nearest even number for table lookup
+    lower_key = int(density_percent // 2) * 2
+    upper_key = min(100, lower_key + 2)
+
+    # If exact match, return it
+    if density_percent == lower_key:
+        return DEDUCT_TABLE[lower_key][severity]
+
+    # Linear interpolation
+    lower_val = DEDUCT_TABLE[lower_key][severity]
+    upper_val = DEDUCT_TABLE[upper_key][severity]
+    fraction = (density_percent - lower_key) / 2.0
+    interpolated = lower_val + fraction * (upper_val - lower_val)
+
+    return int(round(interpolated))
+
 # Configure logging safely (create logs directory if needed)
 def _configure_logging():
     """Configure detailed logging for rut analysis."""
@@ -314,122 +400,272 @@ def _analyze_ruts_in_polygon(
     polygon: Polygon,
     dy_freq: int,
     dx: float,
-    job_id: str
+    job_id: str,
+    neighbor_eval: bool = False,
+    neighbor_range: int = 2
 ) -> Dict[str, Any]:
     """
     Analyze ruts within polygon by sampling along vertical lines.
+    Optionally test neighboring sampling frequencies.
 
     Returns results dictionary with detected ruts and statistics.
     """
-    # Calculate dy from frequency
-    pix_m = float(np.mean(np.abs(metadata['resolution'])))
-    dy = (100.0 / float(dy_freq)) * pix_m
+    # Calculate polygon area in square feet
+    polygon_area_sqm = polygon.area
+    polygon_area_sqft = polygon_area_sqm * 10.7639  # Convert to sq ft
+    logger.info(f"Job {job_id}: Polygon area = {polygon_area_sqft:.2f} sq ft")
 
-    logger.info(f"Job {job_id}: dy={dy:.4f}m, dx={dx:.4f}m")
+    # Determine frequencies to analyze
+    if neighbor_eval:
+        start_freq = max(1, dy_freq - neighbor_range)
+        end_freq = dy_freq + neighbor_range
+        frequencies = list(range(start_freq, end_freq + 1))
+        logger.info(f"Job {job_id}: Neighbor evaluation enabled, testing frequencies: {frequencies}")
+    else:
+        frequencies = [dy_freq]
+        logger.info(f"Job {job_id}: Single frequency analysis: {dy_freq}")
 
-    # Get polygon bounds
-    min_x, min_y, max_x, max_y = polygon.bounds
-    x_steps = np.arange(min_x, max_x + dx, dx)
+    # Storage for neighbor analysis
+    frequency_results = {}
+    all_ruts_all_freq = []
+    cross_sections = []  # Store sample cross-sections for plotting (only for primary frequency)
 
-    logger.info(f"Job {job_id}: Analyzing {len(x_steps)} vertical lines")
+    for freq in frequencies:
+        # Calculate dy from frequency
+        pix_m = float(np.mean(np.abs(metadata['resolution'])))
+        dy = (100.0 / float(freq)) * pix_m
 
-    all_ruts = []
-    cross_sections = []  # Store sample cross-sections for plotting
-    max_cross_sections = 30  # Sample first 30 cross-sections
+        logger.info(f"Job {job_id}: Processing frequency {freq}, dy={dy:.4f}m, dx={dx:.4f}m")
 
-    # Sample along vertical lines
-    for line_idx, x in enumerate(x_steps):
-        if line_idx % 100 == 0:
-            logger.info(f"Job {job_id}: Processing line {line_idx}/{len(x_steps)}")
+        # Get polygon bounds
+        min_x, min_y, max_x, max_y = polygon.bounds
+        x_steps = np.arange(min_x, max_x + dx, dx)
 
-        # Create vertical line
-        line = LineString([(x, min_y), (x, max_y)])
-        clipped_line = line.intersection(polygon)
+        freq_ruts = []
+        max_cross_sections = 30  # Sample first 30 cross-sections
 
-        if clipped_line.is_empty or clipped_line.length <= 0:
-            continue
+        # Sample along vertical lines
+        for line_idx, x in enumerate(x_steps):
+            if line_idx % 100 == 0:
+                logger.info(f"Job {job_id}: Freq {freq} - Processing line {line_idx}/{len(x_steps)}")
 
-        # Sample points along line
-        length = clipped_line.length
-        distances = np.arange(0, length, dy)
+            # Create vertical line
+            line = LineString([(x, min_y), (x, max_y)])
+            clipped_line = line.intersection(polygon)
 
-        if len(distances) < 2:
-            continue
+            if clipped_line.is_empty or clipped_line.length <= 0:
+                continue
 
-        sample_points = [clipped_line.interpolate(distance) for distance in distances]
+            # Sample points along line
+            length = clipped_line.length
+            distances = np.arange(0, length, dy)
 
-        # Extract elevations at sample points
-        depths = []
-        for pt in sample_points:
-            try:
-                # Transform point to pixel coordinates
-                from rasterio.transform import rowcol
-                row, col = rowcol(metadata['transform'], pt.x, pt.y)
+            if len(distances) < 2:
+                continue
 
-                # Check bounds
-                if 0 <= row < elevation_data.shape[0] and 0 <= col < elevation_data.shape[1]:
-                    depth = elevation_data[row, col]
-                    if depth == -32767:  # Legacy safety
+            sample_points = [clipped_line.interpolate(distance) for distance in distances]
+
+            # Extract elevations at sample points
+            depths = []
+            for pt in sample_points:
+                try:
+                    # Transform point to pixel coordinates
+                    from rasterio.transform import rowcol
+                    row, col = rowcol(metadata['transform'], pt.x, pt.y)
+
+                    # Check bounds
+                    if 0 <= row < elevation_data.shape[0] and 0 <= col < elevation_data.shape[1]:
+                        depth = elevation_data[row, col]
+                        if depth == -32767:  # Legacy safety
+                            depth = np.nan
+                    else:
                         depth = np.nan
-                else:
+                except IndexError:
                     depth = np.nan
-            except IndexError:
-                depth = np.nan
-            depths.append(depth)
+                depths.append(depth)
 
-        # Filter out NaN
-        mask = [not np.isnan(d) for d in depths]
-        if sum(mask) < 2:
-            continue
+            # Filter out NaN
+            mask = [not np.isnan(d) for d in depths]
+            if sum(mask) < 2:
+                continue
 
-        depths_filtered = [d for d, m in zip(depths, mask) if m]
-        distances_filtered = [distances[i] for i, m in enumerate(mask) if m]
+            depths_filtered = [d for d, m in zip(depths, mask) if m]
+            distances_filtered = [distances[i] for i, m in enumerate(mask) if m]
 
-        # Save first N cross-sections for plotting
-        if len(cross_sections) < max_cross_sections:
-            cross_sections.append({
-                'line_idx': line_idx,
-                'x': float(x),
-                'distances': [float(d) for d in distances_filtered],
-                'elevations': [float(e) for e in depths_filtered]
-            })
+            # Save first N cross-sections for plotting (only for primary frequency)
+            if freq == dy_freq and len(cross_sections) < max_cross_sections:
+                cross_sections.append({
+                    'line_idx': line_idx,
+                    'x': float(x),
+                    'distances': [float(d) for d in distances_filtered],
+                    'elevations': [float(e) for e in depths_filtered]
+                })
 
-        # Detect ruts along this line
-        ruts = _detect_ruts_along_line(depths_filtered, dy, dx)
+            # Detect ruts along this line
+            ruts = _detect_ruts_along_line(depths_filtered, dy, dx)
 
-        # Add line position to each rut
-        for rut in ruts:
-            rut['line_x'] = float(x)
-            all_ruts.append(rut)
+            # Add line position and frequency to each rut
+            for rut in ruts:
+                rut['line_x'] = float(x)
+                rut['frequency'] = freq
+                freq_ruts.append(rut)
+                all_ruts_all_freq.append(rut)
 
-    # Calculate statistics
-    total_ruts = len(all_ruts)
-    low_count = sum(1 for r in all_ruts if r['severity'] == 'Low')
-    medium_count = sum(1 for r in all_ruts if r['severity'] == 'Medium')
-    high_count = sum(1 for r in all_ruts if r['severity'] == 'High')
-    total_area = sum(r['rut_area_sqft'] for r in all_ruts)
+        # Calculate statistics for this frequency
+        total_ruts = len(freq_ruts)
+        low_count = sum(1 for r in freq_ruts if r['severity'] == 'Low')
+        medium_count = sum(1 for r in freq_ruts if r['severity'] == 'Medium')
+        high_count = sum(1 for r in freq_ruts if r['severity'] == 'High')
 
-    logger.info(f"Job {job_id}: Detected {total_ruts} ruts (Low={low_count}, Medium={medium_count}, High={high_count})")
+        low_area = sum(r['rut_area_sqft'] for r in freq_ruts if r['severity'] == 'Low')
+        medium_area = sum(r['rut_area_sqft'] for r in freq_ruts if r['severity'] == 'Medium')
+        high_area = sum(r['rut_area_sqft'] for r in freq_ruts if r['severity'] == 'High')
+        total_area = low_area + medium_area + high_area
+
+        frequency_results[freq] = {
+            'ruts': freq_ruts,
+            'total_ruts_detected': total_ruts,
+            'low_severity_count': low_count,
+            'medium_severity_count': medium_count,
+            'high_severity_count': high_count,
+            'low_area_sqft': float(low_area),
+            'medium_area_sqft': float(medium_area),
+            'high_area_sqft': float(high_area),
+            'total_area_sqft': float(total_area),
+        }
+
+        logger.info(f"Job {job_id}: Freq {freq} - Detected {total_ruts} ruts (Low={low_count}, Medium={medium_count}, High={high_count})")
+
+    # Use primary frequency results as main results
+    primary_results = frequency_results[dy_freq]
+
+    # Calculate densities and deduct values for primary frequency
+    density_data = {}
+    for severity in ['Low', 'Medium', 'High']:
+        area_key = f'{severity.lower()}_area_sqft'
+        area = primary_results[area_key]
+        density_percent = (area / polygon_area_sqft * 100) if polygon_area_sqft > 0 else 0
+        deduct_value = _get_deduct_value(density_percent, severity)
+
+        density_data[severity] = {
+            'area_sqft': float(area),
+            'density_percent': float(density_percent),
+            'deduct_value': int(deduct_value)
+        }
+
+    logger.info(f"Job {job_id}: Density and deduct values calculated")
     logger.info(f"Job {job_id}: Saved {len(cross_sections)} cross-sections for plotting")
 
     return {
-        'ruts': all_ruts,
-        'total_ruts_detected': total_ruts,
-        'low_severity_count': low_count,
-        'medium_severity_count': medium_count,
-        'high_severity_count': high_count,
-        'total_area_sqft': float(total_area),
-        'cross_sections': cross_sections
+        'ruts': primary_results['ruts'],
+        'total_ruts_detected': primary_results['total_ruts_detected'],
+        'low_severity_count': primary_results['low_severity_count'],
+        'medium_severity_count': primary_results['medium_severity_count'],
+        'high_severity_count': primary_results['high_severity_count'],
+        'total_area_sqft': primary_results['total_area_sqft'],
+        'polygon_area_sqft': float(polygon_area_sqft),
+        'density_data': density_data,
+        'cross_sections': cross_sections,
+        'neighbor_eval': neighbor_eval,
+        'frequency_results': frequency_results if neighbor_eval else None
     }
+
+
+def _create_deduct_curve_plot(density_data: Dict[str, Any]) -> go.Figure:
+    """
+    Create a plot showing L, M, H deduct curves with actual values marked.
+
+    Args:
+        density_data: Dictionary with severity data including density_percent and deduct_value
+
+    Returns:
+        Plotly Figure object
+    """
+    # Extract curve data from DEDUCT_TABLE
+    densities = sorted(DEDUCT_TABLE.keys())
+    low_curve = [DEDUCT_TABLE[d]["Low"] for d in densities]
+    medium_curve = [DEDUCT_TABLE[d]["Medium"] for d in densities]
+    high_curve = [DEDUCT_TABLE[d]["High"] for d in densities]
+
+    # Create figure
+    fig = go.Figure()
+
+    # Add curves
+    fig.add_trace(go.Scatter(
+        x=densities,
+        y=low_curve,
+        mode='lines',
+        name='Low Severity',
+        line=dict(color='green', width=3)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=densities,
+        y=medium_curve,
+        mode='lines',
+        name='Medium Severity',
+        line=dict(color='orange', width=3)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=densities,
+        y=high_curve,
+        mode='lines',
+        name='High Severity',
+        line=dict(color='red', width=3)
+    ))
+
+    # Add markers for actual values
+    colors_map = {'Low': 'green', 'Medium': 'orange', 'High': 'red'}
+    for severity in ['Low', 'Medium', 'High']:
+        if severity in density_data:
+            actual_density = density_data[severity]['density_percent']
+            actual_deduct = density_data[severity]['deduct_value']
+
+            # Add marker
+            fig.add_trace(go.Scatter(
+                x=[actual_density],
+                y=[actual_deduct],
+                mode='markers+text',
+                name=f'{severity} (Actual)',
+                marker=dict(
+                    size=15,
+                    color=colors_map[severity],
+                    symbol='star',
+                    line=dict(color='black', width=2)
+                ),
+                text=f'{actual_deduct}',
+                textposition='top center',
+                textfont=dict(size=12, color='black', family='Arial Black'),
+                showlegend=False
+            ))
+
+    # Update layout
+    fig.update_layout(
+        title='Deduct Value Curves with Actual Values',
+        xaxis_title='Density (%)',
+        yaxis_title='Deduct Value',
+        template='plotly_white',
+        height=400,
+        width=700,
+        showlegend=True,
+        legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
+        font=dict(size=11)
+    )
+
+    return fig
 
 
 def _create_plot_figure(results: Dict[str, Any]) -> go.Figure:
     """
-    Create Plotly figure with rut analysis results and elevation cross-sections.
+    Create Plotly figure with rut analysis results, density/deduct plots, and elevation cross-sections.
     Returns Plotly Figure object.
     """
     ruts = results['ruts']
     cross_sections = results.get('cross_sections', [])
+    density_data = results.get('density_data', {})
+    neighbor_eval = results.get('neighbor_eval', False)
+    frequency_results = results.get('frequency_results', {})
 
     if not ruts:
         # Empty plot
@@ -448,109 +684,354 @@ def _create_plot_figure(results: Dict[str, Any]) -> go.Figure:
         )
         return fig
 
-    # Calculate number of rows for cross-section plots
-    n_cross_sections = len(cross_sections)
-    n_cols_cs = min(5, n_cross_sections)  # Max 5 columns
-    n_rows_cs = (n_cross_sections + n_cols_cs - 1) // n_cols_cs if n_cross_sections > 0 else 0
+    # Determine layout based on neighbor_eval
+    if neighbor_eval:
+        # Neighbor evaluation layout: top row with 3 plots, bottom row with table
+        fig = make_subplots(
+            rows=2, cols=3,
+            subplot_titles=[
+                "Mean Depth by Severity (Across Frequencies)",
+                "Total Area by Severity (Across Frequencies)",
+                "Density & Deduct Values",
+                "Frequency Analysis Details", "", ""
+            ],
+            specs=[
+                [{'type': 'scatter'}, {'type': 'scatter'}, {'type': 'bar'}],
+                [{'type': 'table', 'colspan': 3}, None, None]
+            ],
+            row_heights=[0.6, 0.4],
+            vertical_spacing=0.1
+        )
 
-    # Total rows: 1 for summary + n_rows_cs for cross-sections
-    total_rows = 1 + n_rows_cs
+        # Prepare frequency analysis data
+        severities = ['Low', 'Medium', 'High']
+        colors = {'Low': 'green', 'Medium': 'orange', 'High': 'red'}
+        freq_list = sorted(frequency_results.keys())
 
-    # Create subplot specs
-    specs = [[{'type': 'bar'}, {'type': 'box'}, None, None, None]]  # First row for summary
-    for _ in range(n_rows_cs):
-        specs.append([{'type': 'scatter'}] * n_cols_cs)
+        # Plot 1: Mean depth across frequencies for each severity
+        for sev in severities:
+            depths_by_freq = []
+            for freq in freq_list:
+                freq_ruts = [r for r in frequency_results[freq]['ruts'] if r['severity'] == sev]
+                if freq_ruts:
+                    mean_depth = np.mean([r['rut_depth_in'] for r in freq_ruts])
+                    depths_by_freq.append(mean_depth)
+                else:
+                    depths_by_freq.append(0)
 
-    # Create titles
-    subplot_titles = ["Rut Severity Distribution", "Depth Distribution by Severity"]
-    if n_cross_sections > 0:
-        subplot_titles.extend([f"Section {i+1}" for i in range(n_cross_sections)])
-
-    # Create figure with subplots
-    fig = make_subplots(
-        rows=total_rows,
-        cols=n_cols_cs,
-        subplot_titles=subplot_titles,
-        specs=specs,
-        vertical_spacing=0.08,
-        horizontal_spacing=0.05,
-        row_heights=[0.3] + [0.7/n_rows_cs]*n_rows_cs if n_rows_cs > 0 else [1.0]
-    )
-
-    # Summary plots in first row
-    severities = ['Low', 'Medium', 'High']
-    counts = [
-        results['low_severity_count'],
-        results['medium_severity_count'],
-        results['high_severity_count']
-    ]
-    colors = ['green', 'orange', 'red']
-
-    # Bar chart
-    fig.add_trace(
-        go.Bar(
-            x=severities,
-            y=counts,
-            marker_color=colors,
-            text=counts,
-            textposition='auto',
-            name='Count',
-            showlegend=False
-        ),
-        row=1, col=1
-    )
-
-    # Box plot
-    for sev, color in zip(severities, colors):
-        sev_ruts = [r for r in ruts if r['severity'] == sev]
-        if sev_ruts:
-            depths = [r['rut_depth_in'] for r in sev_ruts]
             fig.add_trace(
-                go.Box(
-                    y=depths,
+                go.Scatter(
+                    x=freq_list,
+                    y=depths_by_freq,
+                    mode='lines+markers',
                     name=sev,
-                    marker_color=color,
+                    line=dict(color=colors[sev], width=2),
+                    marker=dict(size=8)
+                ),
+                row=1, col=1
+            )
+
+        # Plot 2: Total area across frequencies for each severity
+        for sev in severities:
+            areas_by_freq = []
+            for freq in freq_list:
+                area_key = f'{sev.lower()}_area_sqft'
+                areas_by_freq.append(frequency_results[freq][area_key])
+
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_list,
+                    y=areas_by_freq,
+                    mode='lines+markers',
+                    name=sev,
+                    line=dict(color=colors[sev], width=2),
+                    marker=dict(size=8),
                     showlegend=False
                 ),
                 row=1, col=2
             )
 
-    # Add elevation cross-section plots
-    for idx, cs in enumerate(cross_sections):
-        row = 2 + (idx // n_cols_cs)
-        col = (idx % n_cols_cs) + 1
+        # Plot 3: Density & Deduct Values (for primary frequency)
+        density_vals = [density_data[sev]['density_percent'] for sev in severities]
+        deduct_vals = [density_data[sev]['deduct_value'] for sev in severities]
 
         fig.add_trace(
-            go.Scatter(
-                x=cs['distances'],
-                y=cs['elevations'],
-                mode='lines',
-                line=dict(color='blue', width=1),
-                name=f"CS {idx+1}",
+            go.Bar(
+                x=severities,
+                y=deduct_vals,
+                marker_color=[colors[sev] for sev in severities],
+                text=[f"<b>Density: {density_data[sev]['density_percent']:.1f}%</b><br>Deduct: {density_data[sev]['deduct_value']}"
+                      for sev in severities],
+                textposition='auto',
+                name='Deduct Value',
                 showlegend=False
             ),
-            row=row, col=col
+            row=1, col=3
         )
 
-        # Update axes for cross-section plots
-        fig.update_xaxes(title_text="Distance (m)", row=row, col=col, title_font=dict(size=8))
-        fig.update_yaxes(title_text="Elevation (m)", row=row, col=col, title_font=dict(size=8))
+        # Build frequency analysis table
+        table_data = []
+        for freq in freq_list:
+            for sev in severities:
+                freq_res = frequency_results[freq]
+                count = sum(1 for r in freq_res['ruts'] if r['severity'] == sev)
+                area = freq_res[f'{sev.lower()}_area_sqft']
+                table_data.append({
+                    'Frequency': freq,
+                    'Severity': sev,
+                    'Count': count,
+                    'Area (ft²)': round(area, 2)
+                })
 
-    # Update summary plot axes
-    fig.update_xaxes(title_text="Severity", row=1, col=1)
-    fig.update_yaxes(title_text="Count", row=1, col=1)
-    fig.update_xaxes(title_text="Severity", row=1, col=2)
-    fig.update_yaxes(title_text="Depth (inches)", row=1, col=2)
+        table_df = pd.DataFrame(table_data)
+        fig.add_trace(
+            go.Table(
+                header=dict(
+                    values=list(table_df.columns),
+                    fill_color='paleturquoise',
+                    align='left',
+                    font=dict(size=12)
+                ),
+                cells=dict(
+                    values=[table_df[col] for col in table_df.columns],
+                    fill_color='lavender',
+                    align='left',
+                    font=dict(size=11)
+                )
+            ),
+            row=2, col=1
+        )
 
-    # Calculate appropriate height
-    plot_height = 400 + (n_rows_cs * 200)
+        # Update axes
+        fig.update_xaxes(title_text="Sampling Frequency", row=1, col=1)
+        fig.update_yaxes(title_text="Mean Depth (inches)", row=1, col=1)
+        fig.update_xaxes(title_text="Sampling Frequency", row=1, col=2)
+        fig.update_yaxes(title_text="Total Area (ft²)", row=1, col=2)
+        fig.update_xaxes(title_text="Severity", row=1, col=3)
+        fig.update_yaxes(title_text="Deduct Value", row=1, col=3)
 
-    fig.update_layout(
-        title=f"Rut Analysis Results (Total: {results['total_ruts_detected']} ruts, Area: {results['total_area_sqft']:.2f} ft²)<br><sub>Showing {n_cross_sections} cross-section elevation profiles</sub>",
-        template="simple_white",
-        height=plot_height,
-        showlegend=False
-    )
+        fig.update_layout(
+            title=f"Rut Analysis - Neighbor Frequency Evaluation<br><sub>Primary Frequency: {list(frequency_results.keys())[len(frequency_results)//2]}, Total Area: {results['total_area_sqft']:.2f} ft², Polygon Area: {results['polygon_area_sqft']:.2f} ft²</sub>",
+            template="simple_white",
+            height=800,
+            showlegend=True,
+            legend=dict(x=0.01, y=0.99)
+        )
+
+    else:
+        # Standard layout: summary row + density/deduct + cross-sections
+        n_cross_sections = len(cross_sections)
+        n_cols_cs = min(5, n_cross_sections)
+        n_rows_cs = (n_cross_sections + n_cols_cs - 1) // n_cols_cs if n_cross_sections > 0 else 0
+
+        # Total rows: 1 for summary + 1 for density/deduct + n_rows_cs for cross-sections
+        total_rows = 2 + n_rows_cs
+
+        # Create subplot specs
+        specs = [
+            [{'type': 'bar'}, {'type': 'box'}, None, None, None],  # Row 1: Summary
+            [{'type': 'scatter', 'colspan': 3}, None, None, {'type': 'table', 'colspan': 2}, None]  # Row 2: Deduct Curve & Details
+        ]
+        for _ in range(n_rows_cs):
+            specs.append([{'type': 'scatter'}] * n_cols_cs)
+
+        # Create titles
+        subplot_titles = [
+            "Rut Severity Distribution",
+            "Depth Distribution by Severity",
+            "Deduct Value Curves with Actual Values",
+            "Density/Deduct Details"
+        ]
+        if n_cross_sections > 0:
+            subplot_titles.extend([f"Section {i+1}" for i in range(n_cross_sections)])
+
+        # Create figure
+        fig = make_subplots(
+            rows=total_rows,
+            cols=n_cols_cs,
+            subplot_titles=subplot_titles,
+            specs=specs,
+            vertical_spacing=0.08,
+            horizontal_spacing=0.05,
+            row_heights=[0.2, 0.2] + [0.6/n_rows_cs]*n_rows_cs if n_rows_cs > 0 else [0.4, 0.6]
+        )
+
+        # Row 1: Summary plots
+        severities = ['Low', 'Medium', 'High']
+        counts = [
+            results['low_severity_count'],
+            results['medium_severity_count'],
+            results['high_severity_count']
+        ]
+        colors = ['green', 'orange', 'red']
+
+        # Bar chart
+        fig.add_trace(
+            go.Bar(
+                x=severities,
+                y=counts,
+                marker_color=colors,
+                text=counts,
+                textposition='auto',
+                name='Count',
+                showlegend=False
+            ),
+            row=1, col=1
+        )
+
+        # Box plot
+        for sev, color in zip(severities, colors):
+            sev_ruts = [r for r in ruts if r['severity'] == sev]
+            if sev_ruts:
+                depths = [r['rut_depth_in'] for r in sev_ruts]
+                fig.add_trace(
+                    go.Box(
+                        y=depths,
+                        name=sev,
+                        marker_color=color,
+                        showlegend=False
+                    ),
+                    row=1, col=2
+                )
+
+        # Row 2: Deduct Curve Plot
+        if density_data:
+            # Extract curve data from DEDUCT_TABLE
+            densities_curve = sorted(DEDUCT_TABLE.keys())
+            low_curve = [DEDUCT_TABLE[d]["Low"] for d in densities_curve]
+            medium_curve = [DEDUCT_TABLE[d]["Medium"] for d in densities_curve]
+            high_curve = [DEDUCT_TABLE[d]["High"] for d in densities_curve]
+
+            # Add curves
+            fig.add_trace(
+                go.Scatter(
+                    x=densities_curve,
+                    y=low_curve,
+                    mode='lines',
+                    name='Low Curve',
+                    line=dict(color='green', width=2),
+                    showlegend=True
+                ),
+                row=2, col=1
+            )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=densities_curve,
+                    y=medium_curve,
+                    mode='lines',
+                    name='Medium Curve',
+                    line=dict(color='orange', width=2),
+                    showlegend=True
+                ),
+                row=2, col=1
+            )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=densities_curve,
+                    y=high_curve,
+                    mode='lines',
+                    name='High Curve',
+                    line=dict(color='red', width=2),
+                    showlegend=True
+                ),
+                row=2, col=1
+            )
+
+            # Add markers for actual values
+            for sev, color in zip(severities, colors):
+                if sev in density_data:
+                    actual_density = density_data[sev]['density_percent']
+                    actual_deduct = density_data[sev]['deduct_value']
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[actual_density],
+                            y=[actual_deduct],
+                            mode='markers+text',
+                            name=f'{sev} (Actual)',
+                            marker=dict(
+                                size=12,
+                                color=color,
+                                symbol='star',
+                                line=dict(color='black', width=1.5)
+                            ),
+                            text=f'{actual_deduct}',
+                            textposition='top center',
+                            textfont=dict(size=10, color='black'),
+                            showlegend=False
+                        ),
+                        row=2, col=1
+                    )
+
+            # Density/Deduct Details Table
+            table_data = {
+                'Severity': severities,
+                'Area (ft²)': [round(density_data[sev]['area_sqft'], 2) for sev in severities],
+                'Density (%)': [round(density_data[sev]['density_percent'], 2) for sev in severities],
+                'Deduct Value': [density_data[sev]['deduct_value'] for sev in severities]
+            }
+
+            fig.add_trace(
+                go.Table(
+                    header=dict(
+                        values=list(table_data.keys()),
+                        fill_color='paleturquoise',
+                        align='left',
+                        font=dict(size=12, color='black'),
+                        line=dict(color='darkslategray', width=2)
+                    ),
+                    cells=dict(
+                        values=[table_data[k] for k in table_data.keys()],
+                        fill_color=[['lightgreen', 'lightyellow', 'lightcoral']],
+                        align='left',
+                        font=dict(size=11, color='black'),
+                        line=dict(color='darkslategray', width=1),
+                        height=30
+                    )
+                ),
+                row=2, col=4
+            )
+
+        # Add elevation cross-section plots
+        for idx, cs in enumerate(cross_sections):
+            row = 3 + (idx // n_cols_cs)
+            col = (idx % n_cols_cs) + 1
+
+            fig.add_trace(
+                go.Scatter(
+                    x=cs['distances'],
+                    y=cs['elevations'],
+                    mode='lines',
+                    line=dict(color='blue', width=1),
+                    name=f"CS {idx+1}",
+                    showlegend=False
+                ),
+                row=row, col=col
+            )
+
+            # Update axes for cross-section plots
+            fig.update_xaxes(title_text="Distance (m)", row=row, col=col, title_font=dict(size=8))
+            fig.update_yaxes(title_text="Elevation (m)", row=row, col=col, title_font=dict(size=8))
+
+        # Update summary plot axes
+        fig.update_xaxes(title_text="Severity", row=1, col=1)
+        fig.update_yaxes(title_text="Count", row=1, col=1)
+        fig.update_xaxes(title_text="Severity", row=1, col=2)
+        fig.update_yaxes(title_text="Depth (inches)", row=1, col=2)
+        fig.update_xaxes(title_text="Density (%)", row=2, col=1)
+        fig.update_yaxes(title_text="Deduct Value", row=2, col=1)
+
+        # Calculate appropriate height
+        plot_height = 400 + 200 + (n_rows_cs * 200)
+
+        fig.update_layout(
+            title=f"Rut Analysis Results<br><sub>Total: {results['total_ruts_detected']} ruts, Area: {results['total_area_sqft']:.2f} ft², Polygon Area: {results.get('polygon_area_sqft', 0):.2f} ft²</sub>",
+            template="simple_white",
+            height=plot_height,
+            showlegend=False
+        )
 
     return fig
 
@@ -582,11 +1063,24 @@ def _generate_pdf_from_results(results: Dict[str, Any], job_id: str, screenshot_
         logger.info(f"Job {job_id}: Generating multi-page PDF report")
 
         cross_sections = results.get('cross_sections', [])
+        density_data = results.get('density_data', {})
 
-        # Page 1: Screenshot + Summary
+        # Page 1: Screenshot + Summary + Deduct Curve Plot
         screenshot_html = ""
         if screenshot_base64:
             screenshot_html = f'<img src="data:image/png;base64,{screenshot_base64}" style="width:100%; max-width:100%; height:auto; margin-bottom: 20px; border: 1px solid #ddd;" />'
+
+        # Generate deduct curve plot
+        deduct_plot_html = ""
+        if density_data:
+            try:
+                deduct_fig = _create_deduct_curve_plot(density_data)
+                deduct_img_bytes = deduct_fig.to_image(format="png", width=900, height=500)
+                deduct_img_base64 = base64.b64encode(deduct_img_bytes).decode('utf-8')
+                deduct_plot_html = f'<img src="data:image/png;base64,{deduct_img_base64}" style="width:100%; max-width:900px; height:auto; margin: 20px 0; border: 1px solid #ddd;" />'
+            except Exception as deduct_plot_error:
+                logger.warning(f"Job {job_id}: Failed to create deduct curve plot: {deduct_plot_error}")
+                deduct_plot_html = '<p style="color: red;">Deduct curve plot unavailable</p>'
 
         summary_html = f"""
         <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin-top: 20px;">
@@ -598,6 +1092,11 @@ def _generate_pdf_from_results(results: Dict[str, Any], job_id: str, screenshot_
                 <div style="color: orange;"><strong>Medium Severity:</strong> {results['medium_severity_count']}</div>
                 <div style="color: red;"><strong>High Severity:</strong> {results['high_severity_count']}</div>
             </div>
+        </div>
+
+        <div style="margin-top: 30px;">
+            <h2 style="color: #333; text-align: center;">Deduct Value Analysis</h2>
+            {deduct_plot_html}
         </div>
         """
 
@@ -834,7 +1333,9 @@ def analyze_ruts_task(self, job_id: str, screenshot_base64: Optional[str] = None
             polygon,
             job.dy_freq,
             job.dx,
-            job_id
+            job_id,
+            job.neighbor_eval,
+            job.neighbor_range
         )
 
         # Generate HTML plot

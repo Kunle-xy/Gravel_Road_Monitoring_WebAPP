@@ -49,6 +49,8 @@ async def create_rut_analysis(
         dx=analysis_request.dx,
         apply_smoothing=analysis_request.apply_smoothing,
         gaussian_sigma=analysis_request.gaussian_sigma,
+        neighbor_eval=analysis_request.neighbor_eval,
+        neighbor_range=analysis_request.neighbor_range,
         status="pending",
         progress=0
     )
