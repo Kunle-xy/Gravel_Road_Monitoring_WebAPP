@@ -1,6 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.config import settings
+from app.database import engine, Base
 from app.routers import auth, files, upload, tiles, tiles_status, folders, rut_analysis
 import logging
 
@@ -12,11 +17,20 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.CELERY_BROKER_URL,  # Reuse existing Redis instance
+)
+
 app = FastAPI(
     title="Gravel Road API",
     version="2.0.0",
-    description="Gravel Road Iowa - TIFF Mapping with Static Tile Generation"
+    description="Gravel Road Iowa - TIFF Mapping with Static Tile Generation",
+    redirect_slashes=False
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,6 +57,8 @@ app.include_router(rut_analysis.router)  # New: Rut distress analysis
 @app.on_event("startup")
 async def startup_event():
     """Application startup"""
+    import app.models  # noqa: ensure all models are registered
+    Base.metadata.create_all(bind=engine)
     logger.info("Starting Gravel Road API v2.0.0")
     logger.info("Static tile generation enabled")
 

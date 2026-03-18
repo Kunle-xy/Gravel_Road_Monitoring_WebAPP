@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { User, getCurrentUser, getToken, logout as logoutUtil } from '../lib/auth';
+import { User, getCurrentUser, logout as logoutUtil } from '../lib/auth';
+import { API_URL, API_ENDPOINTS } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -18,12 +19,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
-    // Don't set loading if we're just refreshing and already have a token
-    const hasToken = !!getToken();
-    if (!hasToken) {
-      setLoading(true);
-    }
-
     try {
       const userData = await getCurrentUser();
       setUser(userData);
@@ -36,10 +31,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Only refresh user once on mount
     refreshUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps - run only once on mount
+  }, []);
+
+  // Silently refresh the access token every 12 minutes (token expires at 15)
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await fetch(`${API_URL}${API_ENDPOINTS.AUTH.REFRESH}`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch {
+        // refresh failed — fetchWithAuth will handle 401 on next request
+      }
+    }, 12 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   const logout = useCallback(() => {
     setUser(null);
@@ -49,8 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({
     user,
     loading,
-    // If we have a token, consider authenticated even if user data is still loading
-    isAuthenticated: loading ? !!getToken() : (!!getToken() && user !== null),
+    isAuthenticated: !loading && user !== null,
     logout,
     refreshUser,
   }), [user, loading, logout, refreshUser]);

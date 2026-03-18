@@ -139,12 +139,14 @@ function ProfileWidget() {
       // Fetch all files to get uncategorized ones
       const filesResponse = await fetchWithAuth(API_ENDPOINTS.FILES.LIST);
 
-      if (foldersResponse.ok && filesResponse.ok) {
+      if (foldersResponse.ok) {
         const foldersData = await foldersResponse.json();
-        const filesData = await filesResponse.json();
-
-        const allFiles = filesData.files || [];
         setFolders(foldersData);
+      }
+
+      if (filesResponse.ok) {
+        const filesData = await filesResponse.json();
+        const allFiles = filesData.files || [];
 
         // Filter uncategorized files (files without folder_id)
         const uncategorized = allFiles.filter((f: TiffFile) => !f.folder_id);
@@ -157,18 +159,12 @@ function ProfileWidget() {
             `${f.filename}: ${f.tile_error || 'Processing failed'}`
           ).join('\n\n');
 
-          alert(`⚠️ Tile generation failed for ${failedFiles.length} file(s):\n\n${errorMessages}\n\nPlease delete and re-upload these files.`);
+          alert(`Tile generation failed for ${failedFiles.length} file(s):\n\n${errorMessages}\n\nPlease delete and re-upload these files.`);
         }
-      } else if (foldersResponse.status === 401 || filesResponse.status === 401) {
-        // Token expired or invalid - clear token and redirect to homepage
-        console.error('Authentication failed when fetching files');
-        localStorage.removeItem('access_token');
-        setError('Authentication failed. Redirecting to login...');
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 1000);
-      } else {
-        setError('Failed to load files. Please try again.');
+      } else if (filesResponse.status === 401) {
+        // handled by fetchWithAuth
+      } else if (!foldersResponse.ok && !filesResponse.ok) {
+        setError('Unable to reach the server. Please check your connection and try again.');
       }
     } catch (error) {
       console.error('Failed to fetch files:', error);
