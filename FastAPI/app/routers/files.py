@@ -29,6 +29,7 @@ def check_s3_file_exists(bucket: str, key: str) -> bool:
     except ClientError:
         return False
 
+@router.get("", response_model=TiffFileListResponse)
 @router.get("/", response_model=TiffFileListResponse)
 async def get_user_files(
     file_type: Optional[str] = Query(None, description="Filter by DEM or ORTHOPHOTO"),

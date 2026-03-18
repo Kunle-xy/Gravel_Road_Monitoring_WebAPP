@@ -44,6 +44,11 @@ ENV/
 .coverage
 htmlcov/
 
+# Runtime artifacts
+__pycache__/
+*.pyc
+logs/
+
 # ============================================
 # Node.js / Next.js / React
 # ============================================

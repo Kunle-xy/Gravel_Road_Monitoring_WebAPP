@@ -1,10 +1,10 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Mail, Lock, User, Building } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Eye, EyeOff, Mail, Lock, User, Building, Check, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Header from './components/Header';
 import Image from 'next/image';
-import { getToken } from './lib/auth';
+import { getCurrentUser } from './lib/auth';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,12 +17,13 @@ export default function AuthPage() {
 
   // Redirect if already authenticated (check once on mount)
   useEffect(() => {
-    const token = getToken();
-    if (token) {
-      router.replace('/dashboard');
-    } else {
-      setIsChecking(false);
-    }
+    getCurrentUser().then((user) => {
+      if (user) {
+        router.replace('/dashboard');
+      } else {
+        setIsChecking(false);
+      }
+    });
   }, []); // Empty dependency - run only once on mount
   
   // Add your images here
@@ -52,6 +53,16 @@ export default function AuthPage() {
     lastName: '',
     organization: ''
   });
+
+  const passwordRequirements = useMemo(() => [
+    { label: 'At least 8 characters', met: formData.password.length >= 8 },
+    { label: 'One uppercase letter', met: /[A-Z]/.test(formData.password) },
+    { label: 'One lowercase letter', met: /[a-z]/.test(formData.password) },
+    { label: 'One digit', met: /[0-9]/.test(formData.password) },
+    { label: 'One special character', met: /[^A-Za-z0-9]/.test(formData.password) },
+  ], [formData.password]);
+
+  const isPasswordValid = passwordRequirements.every(r => r.met);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -86,6 +97,7 @@ export default function AuthPage() {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
 
@@ -96,11 +108,10 @@ export default function AuthPage() {
       }
 
       if (isLogin) {
-        localStorage.setItem('access_token', data.access_token);
         window.location.href = '/dashboard';
       } else {
         setIsLogin(true);
-        setError('Registration successful! Please login.');
+        setError(data.message || 'Check your email for a verification link.');
       }
 
     } catch (err: unknown) {
@@ -287,11 +298,27 @@ export default function AuthPage() {
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
+                  {!isLogin && formData.password.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {passwordRequirements.map((req) => (
+                        <li key={req.label} className="flex items-center gap-1.5 text-xs">
+                          {req.met ? (
+                            <Check size={14} className="text-green-600 shrink-0" />
+                          ) : (
+                            <X size={14} className="text-gray-400 shrink-0" />
+                          )}
+                          <span className={req.met ? 'text-green-700' : 'text-gray-500'}>
+                            {req.label}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
                 <button
                   onClick={handleSubmit}
-                  disabled={loading}
+                  disabled={loading || (!isLogin && !isPasswordValid)}
                   className="w-full py-3 px-4 bg-red-800 text-white font-semibold rounded-lg hover:bg-red-900 focus:ring-4 focus:ring-red-300 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
                   {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}

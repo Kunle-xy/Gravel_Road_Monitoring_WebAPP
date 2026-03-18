@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # AWS S3
     AWS_ACCESS_KEY_ID: str
@@ -27,6 +28,11 @@ class Settings(BaseSettings):
 
     # TiTiler
     TITILER_URL: str = "https://titiler.xyz"  # Public TiTiler instance or your own
+
+    # Email verification
+    EMAIL_PROVIDER: str = "console"  # "console" for dev, "ses" for production
+    SES_FROM_EMAIL: str = ""  # Verified SES sender email (production only)
+    EMAIL_VERIFY_EXPIRE_HOURS: int = 24
 
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
