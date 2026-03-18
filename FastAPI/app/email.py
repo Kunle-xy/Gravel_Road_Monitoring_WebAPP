@@ -60,12 +60,7 @@ def _send_via_ses(to_email: str, first_name: str | None, verify_url: str):
     </div>
     """
 
-    ses = boto3.client(
-        "ses",
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.AWS_REGION,
-    )
+    ses = boto3.client("ses", region_name=settings.AWS_REGION)
 
     ses.send_email(
         Source=f"Gravel Road Iowa <{settings.SES_FROM_EMAIL}>",

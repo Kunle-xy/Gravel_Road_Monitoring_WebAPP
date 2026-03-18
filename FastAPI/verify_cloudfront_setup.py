@@ -19,12 +19,7 @@ def verify_setup():
     print(f"  ✓ Region: {settings.AWS_REGION}")
 
     # S3 Client
-    s3 = boto3.client(
-        's3',
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.AWS_REGION
-    )
+    s3 = boto3.client('s3', region_name=settings.AWS_REGION)
 
     # Check S3 buckets exist
     print("\n[2] S3 Bucket Access")
@@ -84,11 +79,7 @@ def verify_setup():
     # Check CloudFront
     print("\n[6] CloudFront Distribution")
     try:
-        cloudfront = boto3.client(
-            'cloudfront',
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        )
+        cloudfront = boto3.client('cloudfront')
 
         # Extract distribution ID from ARN
         dist_id = settings.AWS_CLOUDFRONT_ARN.split('/')[-1] if settings.AWS_CLOUDFRONT_ARN else None

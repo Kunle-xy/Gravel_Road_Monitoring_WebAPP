@@ -11,10 +11,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # AWS S3
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
-    AWS_REGION: str = "us-east-1"
+    # AWS (credentials come from IAM role on EC2, optional for local dev)
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-2"
     S3_BUCKET_NAME: str  # Main bucket for tiles (gravel-road-app)
     S3_BUCKET_RAW: str  # Raw uploads bucket (gravel-road-raw)
 

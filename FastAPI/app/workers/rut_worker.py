@@ -143,12 +143,7 @@ def _configure_logging():
 _configure_logging()
 
 # Initialize S3 client
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-    region_name=settings.AWS_REGION
-)
+s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
 
 
 def _gaussian_filter_nan(arr: np.ndarray, sigma: float) -> np.ndarray:
