@@ -14,12 +14,7 @@ from app.config import settings
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-    region_name=settings.AWS_REGION
-)
+s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
 
 def check_s3_file_exists(bucket: str, key: str) -> bool:
     """Check if file exists in S3"""

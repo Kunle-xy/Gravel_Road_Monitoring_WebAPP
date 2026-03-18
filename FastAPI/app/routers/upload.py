@@ -22,12 +22,7 @@ from rio_tiler.io import Reader
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-    region_name=settings.AWS_REGION
-)
+s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
 
 def generate_s3_key(user_id: str, filename: str, file_type: str, bucket_type: str = "raw") -> str:
     """
