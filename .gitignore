@@ -105,5 +105,5 @@ htmlcov/
 
 # Uploads (if storing locally)
 uploads/
-upload/
+/upload/
 FASTAPI_BACKEND_ANALYSIS.md

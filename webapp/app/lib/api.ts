@@ -95,6 +95,8 @@ export const API_ENDPOINTS = {
     DOWNLOAD_URL: (fileId: string) => `/files/${fileId}/download-url`,
     TILES: (fileId: string) => `/files/${fileId}/tiles`,
     UPLOAD: '/upload',
+    PRESIGN: '/upload/presign',
+    COMPLETE: '/upload/complete',
     DELETE: (fileId: string) => `/upload/${fileId}`,
   },
   FOLDERS: {
