@@ -308,3 +308,62 @@ class CrownAnalysisStatusResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Corrugation Analysis Schemas
+class CorrugationAnalysisCreate(BaseModel):
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+    line_interval: Optional[float] = 0.1
+    dy_freq: Optional[int] = 10
+    sigma_samples: Optional[float] = 2.0
+    neighbor_eval: Optional[bool] = False
+    neighbor_range: Optional[int] = 2
+    screenshot_base64: Optional[str] = None
+
+class CorrugationAnalysisResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+    line_interval: float
+    dy_freq: int
+    sigma_samples: float
+    neighbor_eval: bool
+    neighbor_range: int
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    celery_task_id: Optional[str] = None
+    results_json: Optional[Dict[str, Any]] = None
+    html_report_url: Optional[str] = None
+    low_area_ft2: float
+    medium_area_ft2: float
+    high_area_ft2: float
+    total_area_ft2: float
+    low_count: int
+    medium_count: int
+    high_count: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class CorrugationAnalysisStatusResponse(BaseModel):
+    id: uuid_lib.UUID
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    html_report_url: Optional[str] = None
+    low_area_ft2: float
+    medium_area_ft2: float
+    high_area_ft2: float
+    total_area_ft2: float
+    low_count: int
+    medium_count: int
+    high_count: int
+
+    class Config:
+        from_attributes = True

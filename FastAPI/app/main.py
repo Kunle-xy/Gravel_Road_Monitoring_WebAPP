@@ -6,7 +6,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, files, upload, tiles, tiles_status, folders, rut_analysis, crown_analysis
+from app.routers import auth, files, upload, tiles, tiles_status, folders, rut_analysis, crown_analysis, corrugation_analysis
 import logging
 
 # Configure logging
@@ -60,6 +60,7 @@ app.include_router(tiles.router)
 app.include_router(tiles_status.router)  # New: Tile generation status API
 app.include_router(rut_analysis.router)  # New: Rut distress analysis
 app.include_router(crown_analysis.router)  # Crown distress analysis
+app.include_router(corrugation_analysis.router)  # Corrugation distress analysis
 
 
 @app.on_event("startup")

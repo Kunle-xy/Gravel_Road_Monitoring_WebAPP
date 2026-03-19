@@ -125,4 +125,12 @@ export const API_ENDPOINTS = {
     DELETE: (jobId: string) => `/crown/${jobId}`,
     COMPLETED: '/crown/completed',
   },
+  CORRUGATION: {
+    BASE: '/corrugation',
+    GET: (jobId: string) => `/corrugation/${jobId}`,
+    STATUS: (jobId: string) => `/corrugation/${jobId}/status`,
+    BY_FILE: (tiffFileId: string) => `/corrugation/file/${tiffFileId}`,
+    DELETE: (jobId: string) => `/corrugation/${jobId}`,
+    COMPLETED: '/corrugation/completed',
+  },
 } as const;
