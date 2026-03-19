@@ -249,13 +249,13 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                 );
               })()}
 
-              {/* ORTHOPHOTO Files Section */}
+              {/* Hillshade / Orthophoto Files Section */}
               {(() => {
-                const orthoFiles = folder.files.filter(f => f.file_type === 'ORTHOPHOTO');
+                const orthoFiles = folder.files.filter(f => f.file_type === 'ORTHOPHOTO' || f.file_type === 'HILLSHADE');
                 return orthoFiles.length > 0 && (
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
-                      Orthophoto Files ({orthoFiles.length})
+                      Hillshade / Orthophoto ({orthoFiles.length})
                     </div>
                     <div className="space-y-2">
                       {orthoFiles.map((file) => (
