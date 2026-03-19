@@ -13,7 +13,7 @@ celery_app = Celery(
     "gravel_road_tiles",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.workers.tile_worker", "app.workers.rut_worker"]  # Auto-discover tasks
+    include=["app.workers.tile_worker", "app.workers.rut.task"]  # Auto-discover tasks
 )
 
 # Celery configuration

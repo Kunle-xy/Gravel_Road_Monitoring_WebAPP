@@ -136,4 +136,4 @@ class RutAnalysisJob(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))
 
-    tiff_file = relationship("TiffFile", back_populates="rut_analyses")
+    tiff_file = relationship("TiffFile", back_populates="rut_analyses") 
