@@ -4,6 +4,7 @@ import { memo } from 'react';
 import { useDistress } from '../contexts/DistressContext';
 import RutForm from './DistressForms/rut';
 import CorrugationForm from './DistressForms/corrugation';
+import CrownForm from './DistressForms/crown';
 
 const DistressFormsOverlay = () => {
   const { activeDistress } = useDistress();
@@ -23,7 +24,7 @@ const DistressFormsOverlay = () => {
           {activeDistress === 'Rut' && <RutForm />}
           {activeDistress === 'Corrugation' && <CorrugationForm />}
           {activeDistress === 'Loose Aggregate' && <div>Loose Aggregate form coming soon...</div>}
-          {activeDistress === 'Crown' && <div>Crown form coming soon...</div>}
+          {activeDistress === 'Crown' && <CrownForm />}
           {activeDistress === 'Potholes' && <div>Potholes form coming soon...</div>}
           {activeDistress === 'Dust' && <div>Dust form coming soon...</div>}
           {activeDistress === 'Drainage' && <div>Drainage form coming soon...</div>}

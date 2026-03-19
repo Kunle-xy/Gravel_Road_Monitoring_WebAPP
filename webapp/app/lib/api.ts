@@ -117,4 +117,12 @@ export const API_ENDPOINTS = {
     DELETE: (jobId: string) => `/rut/${jobId}`,
     COMPLETED: '/rut/completed',
   },
+  CROWN: {
+    BASE: '/crown',
+    GET: (jobId: string) => `/crown/${jobId}`,
+    STATUS: (jobId: string) => `/crown/${jobId}/status`,
+    BY_FILE: (tiffFileId: string) => `/crown/file/${tiffFileId}`,
+    DELETE: (jobId: string) => `/crown/${jobId}`,
+    COMPLETED: '/crown/completed',
+  },
 } as const;

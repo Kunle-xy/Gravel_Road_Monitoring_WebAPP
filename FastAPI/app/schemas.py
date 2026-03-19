@@ -247,3 +247,64 @@ class MultipartAbortRequest(BaseModel):
     s3_key: str
     s3_upload_id: str
     upload_id: uuid_lib.UUID
+
+
+# Crown Analysis Schemas
+class CrownAnalysisCreate(BaseModel):
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+    spacing_m: Optional[float] = 0.2
+    dy_freq: Optional[int] = 10
+    apply_smoothing: Optional[bool] = False
+    gaussian_sigma: Optional[float] = 1.0
+    neighbor_eval: Optional[bool] = False
+    neighbor_range: Optional[int] = 2
+    screenshot_base64: Optional[str] = None
+
+class CrownAnalysisResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+    spacing_m: float
+    dy_freq: int
+    apply_smoothing: bool
+    gaussian_sigma: float
+    neighbor_eval: bool
+    neighbor_range: int
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    celery_task_id: Optional[str] = None
+    results_json: Optional[Dict[str, Any]] = None
+    html_report_url: Optional[str] = None
+    low_severity_ft: float
+    medium_severity_ft: float
+    high_severity_ft: float
+    total_linear_ft: float
+    low_count: int
+    medium_count: int
+    high_count: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class CrownAnalysisStatusResponse(BaseModel):
+    id: uuid_lib.UUID
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    html_report_url: Optional[str] = None
+    low_severity_ft: float
+    medium_severity_ft: float
+    high_severity_ft: float
+    total_linear_ft: float
+    low_count: int
+    medium_count: int
+    high_count: int
+
+    class Config:
+        from_attributes = True

@@ -95,6 +95,7 @@ class TiffFile(Base):
     user = relationship("User", back_populates="tiff_files")
     folder = relationship("Folder", back_populates="tiff_files")
     rut_analyses = relationship("RutAnalysisJob", back_populates="tiff_file", cascade="all, delete-orphan")
+    crown_analyses = relationship("CrownAnalysisJob", back_populates="tiff_file", cascade="all, delete-orphan")
 
 class RutAnalysisJob(Base):
     __tablename__ = "rut_analysis_jobs"
@@ -136,4 +137,47 @@ class RutAnalysisJob(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))
 
-    tiff_file = relationship("TiffFile", back_populates="rut_analyses") 
+    tiff_file = relationship("TiffFile", back_populates="rut_analyses")
+
+
+class CrownAnalysisJob(Base):
+    __tablename__ = "crown_analysis_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tiff_file_id = Column(UUID(as_uuid=True), ForeignKey("tiff_files.id", ondelete="CASCADE"), nullable=False)
+
+    # Analysis parameters
+    polygon_geojson = Column(JSON, nullable=False)
+    spacing_m = Column(Float, default=0.2)  # Line spacing in meters
+    dy_freq = Column(Integer, default=10)  # Sampling frequency per 100 pixels
+    apply_smoothing = Column(Boolean, default=False)
+    gaussian_sigma = Column(Float, default=1.0)
+    neighbor_eval = Column(Boolean, default=False)
+    neighbor_range = Column(Integer, default=2)
+
+    # Job status
+    status = Column(String(50), default="pending")
+    progress = Column(Integer, default=0)
+    error_message = Column(Text)
+    celery_task_id = Column(String(255))
+
+    # Results
+    results_json = Column(JSON)
+    html_report_s3_key = Column(String(500))
+    html_report_url = Column(Text)
+
+    # Statistics — linear feet by severity
+    low_severity_ft = Column(Float, default=0.0)
+    medium_severity_ft = Column(Float, default=0.0)
+    high_severity_ft = Column(Float, default=0.0)
+    total_linear_ft = Column(Float, default=0.0)
+    low_count = Column(Integer, default=0)
+    medium_count = Column(Integer, default=0)
+    high_count = Column(Integer, default=0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True))
+
+    tiff_file = relationship("TiffFile", back_populates="crown_analyses")
