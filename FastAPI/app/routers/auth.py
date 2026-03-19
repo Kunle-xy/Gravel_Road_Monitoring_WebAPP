@@ -69,22 +69,16 @@ def register(request: Request, user_data: UserCreate, db: Session = Depends(get_
             first_name=user_data.first_name,
             last_name=user_data.last_name,
             organization=user_data.organization,
-            is_active=False,
-            email_verified=False,
+            is_active=True,
+            email_verified=True,
         )
 
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
 
-        try:
-            send_verification_email(new_user.email, new_user.first_name)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Failed to send verification email to {new_user.email}: {e}")
-
     # Same response whether email exists or not — prevents enumeration
-    return {"message": "If this email is available, a verification link has been sent. Check your inbox."}
+    return {"message": "Account created successfully. You can now log in."}
 
 @router.post("/login")
 @limiter.limit("20/minute")
@@ -113,12 +107,6 @@ def login(request: Request, user_credentials: UserLogin, db: Session = Depends(g
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if not user.email_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email before logging in. Check your inbox for a verification link."
         )
 
     if not user.is_active:

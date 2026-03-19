@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+from html import escape
 from app.config import settings
 from app.auth import create_access_token
 
@@ -13,31 +14,8 @@ def create_verification_token(email: str) -> str:
     )
 
 
-def send_verification_email(to_email: str, first_name: str | None = None):
-    token = create_verification_token(to_email)
-    verify_url = f"{settings.FRONTEND_URL}/verify?token={token}"
-
-    if settings.EMAIL_PROVIDER == "console":
-        # Dev mode: log the link instead of sending an email
-        logger.info(f"\n{'='*60}")
-        logger.info(f"VERIFICATION LINK for {to_email}:")
-        logger.info(f"{verify_url}")
-        logger.info(f"{'='*60}\n")
-        return
-
-    if settings.EMAIL_PROVIDER == "ses":
-        _send_via_ses(to_email, first_name, verify_url)
-        return
-
-    raise ValueError(f"Unknown EMAIL_PROVIDER: {settings.EMAIL_PROVIDER}")
-
-
-def _send_via_ses(to_email: str, first_name: str | None, verify_url: str):
-    import boto3
-    from html import escape
-    name = escape(first_name) if first_name else "there"
-
-    html = f"""
+def _build_html(name: str, verify_url: str) -> str:
+    return f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px;">
         <h2 style="color: #7f1d1d;">Gravel Road Iowa</h2>
         <p>Hi {name},</p>
@@ -61,8 +39,35 @@ def _send_via_ses(to_email: str, first_name: str | None, verify_url: str):
     </div>
     """
 
-    ses = boto3.client("ses", region_name=settings.AWS_REGION)
 
+def send_verification_email(to_email: str, first_name: str | None = None):
+    token = create_verification_token(to_email)
+    verify_url = f"{settings.FRONTEND_URL}/verify?token={token}"
+
+    if settings.EMAIL_PROVIDER == "console":
+        logger.info(f"\n{'='*60}")
+        logger.info(f"VERIFICATION LINK for {to_email}:")
+        logger.info(f"{verify_url}")
+        logger.info(f"{'='*60}\n")
+        return
+
+    if settings.EMAIL_PROVIDER == "ses":
+        _send_via_ses(to_email, first_name, verify_url)
+        return
+
+    if settings.EMAIL_PROVIDER == "resend":
+        _send_via_resend(to_email, first_name, verify_url)
+        return
+
+    raise ValueError(f"Unknown EMAIL_PROVIDER: {settings.EMAIL_PROVIDER}")
+
+
+def _send_via_ses(to_email: str, first_name: str | None, verify_url: str):
+    import boto3
+    name = escape(first_name) if first_name else "there"
+    html = _build_html(name, verify_url)
+
+    ses = boto3.client("ses", region_name=settings.AWS_REGION)
     ses.send_email(
         Source=f"Gravel Road Iowa <{settings.SES_FROM_EMAIL}>",
         Destination={"ToAddresses": [to_email]},
@@ -72,3 +77,18 @@ def _send_via_ses(to_email: str, first_name: str | None, verify_url: str):
         },
     )
     logger.info(f"Verification email sent to {to_email} via SES")
+
+
+def _send_via_resend(to_email: str, first_name: str | None, verify_url: str):
+    import resend
+    resend.api_key = settings.RESEND_API_KEY
+    name = escape(first_name) if first_name else "there"
+    html = _build_html(name, verify_url)
+
+    resend.Emails.send({
+        "from": settings.RESEND_FROM_EMAIL,
+        "to": [to_email],
+        "subject": "Verify your email - Gravel Road Iowa",
+        "html": html,
+    })
+    logger.info(f"Verification email sent to {to_email} via Resend")

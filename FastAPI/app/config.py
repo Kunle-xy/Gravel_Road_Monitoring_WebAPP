@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     TITILER_URL: str = "https://titiler.xyz"  # Public TiTiler instance or your own
 
     # Email verification
-    EMAIL_PROVIDER: str = "console"  # "console" for dev, "ses" for production
-    SES_FROM_EMAIL: str = ""  # Verified SES sender email (production only)
+    EMAIL_PROVIDER: str = "console"  # "console", "ses", or "resend"
+    SES_FROM_EMAIL: str = ""  # Verified SES sender email
+    RESEND_API_KEY: str = ""  # Resend API key (starts with re_)
+    RESEND_FROM_EMAIL: str = "Gravel Road Iowa <onboarding@resend.dev>"
     EMAIL_VERIFY_EXPIRE_HOURS: int = 24
 
     # Redis
