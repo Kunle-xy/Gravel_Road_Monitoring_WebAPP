@@ -11,19 +11,35 @@ export interface User {
   created_at: string;
 }
 
-// Fetch current user from API (cookie is sent automatically)
+// Fetch current user from API
+// Uses a simple fetch (not fetchWithAuth) to avoid redirect loops on the login page.
+// Attempts one token refresh if the access token is expired.
 export const getCurrentUser = async (): Promise<User | null> => {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    const response = await fetch(`${API_URL}${API_ENDPOINTS.AUTH.ME}`, {
+    let response = await fetch(`${API_URL}${API_ENDPOINTS.AUTH.ME}`, {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
+
+    // If 401, try refreshing the token once
+    if (response.status === 401) {
+      const refreshRes = await fetch(`${API_URL}${API_ENDPOINTS.AUTH.REFRESH}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (refreshRes.ok) {
+        response = await fetch(`${API_URL}${API_ENDPOINTS.AUTH.ME}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     if (!response.ok) {
       return null;

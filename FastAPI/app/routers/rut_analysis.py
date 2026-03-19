@@ -12,6 +12,7 @@ from app.workers.rut_worker import analyze_ruts_task
 router = APIRouter(prefix="/rut", tags=["Rut Analysis"])
 
 
+@router.post("", response_model=RutAnalysisResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=RutAnalysisResponse, status_code=status.HTTP_201_CREATED)
 async def create_rut_analysis(
     analysis_request: RutAnalysisCreate,

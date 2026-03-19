@@ -29,15 +29,20 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
+    # Set purpose if not already specified (default to "access")
+    if "purpose" not in to_encode:
+        to_encode["purpose"] = "access"
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-def create_refresh_token(user_id, db: Session) -> str:
+def create_refresh_token(user_id, db: Session, family_id=None) -> str:
+    import uuid as uuid_mod
     token = secrets.token_urlsafe(64)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     db_token = RefreshToken(
         user_id=user_id,
         token=token,
+        family_id=family_id or uuid_mod.uuid4(),
         expires_at=expires_at,
     )
     db.add(db_token)
@@ -47,10 +52,17 @@ def create_refresh_token(user_id, db: Session) -> str:
 def validate_refresh_token(token: str, db: Session) -> RefreshToken:
     db_token = db.query(RefreshToken).filter(
         RefreshToken.token == token,
-        RefreshToken.revoked == False,
     ).first()
     if not db_token:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+    # Reuse detection: if token was already revoked, an attacker may have used it.
+    # Revoke the entire token family to protect the user.
+    if db_token.revoked:
+        db.query(RefreshToken).filter(
+            RefreshToken.family_id == db_token.family_id,
+        ).update({"revoked": True})
+        db.commit()
+        raise HTTPException(status_code=401, detail="Token reuse detected. All sessions revoked for security.")
     if db_token.expires_at < datetime.now(timezone.utc):
         db_token.revoked = True
         db.commit()
@@ -84,6 +96,9 @@ async def get_current_user(
     token = get_token_from_cookie(request)
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # Reject non-access tokens (e.g. email verification tokens)
+        if payload.get("purpose") != "access":
+            raise credentials_exception
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception

@@ -28,6 +28,9 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class EmailOnly(BaseModel):
+    email: EmailStr
+
 class UserResponse(BaseModel):
     id: uuid_lib.UUID
     email: str

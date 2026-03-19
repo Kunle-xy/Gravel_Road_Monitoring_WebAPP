@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 
 from app.database import get_db
 from app.models import User, RefreshToken
-from app.schemas import UserCreate, UserLogin, UserResponse, Token
+from app.schemas import UserCreate, UserLogin, UserResponse, Token, EmailOnly
 from app.auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_active_user, create_refresh_token,
@@ -24,7 +24,7 @@ limiter = Limiter(
 )
 
 def _is_prod() -> bool:
-    return not settings.FRONTEND_URL.startswith("http://localhost")
+    return settings.FRONTEND_URL.startswith("https://")
 
 def _set_auth_cookies(response: JSONResponse, access_token: str, refresh_token: str):
     is_prod = _is_prod()
@@ -58,7 +58,7 @@ def _clear_auth_cookies(response: JSONResponse):
         )
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-@limiter.limit("3/hour")
+@limiter.limit("20/hour")
 def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if not existing_user:
@@ -79,18 +79,36 @@ def register(request: Request, user_data: UserCreate, db: Session = Depends(get_
 
         try:
             send_verification_email(new_user.email, new_user.first_name)
-        except Exception:
-            pass  # User is created; they can request a resend
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to send verification email to {new_user.email}: {e}")
 
     # Same response whether email exists or not — prevents enumeration
     return {"message": "If this email is available, a verification link has been sent. Check your inbox."}
 
 @router.post("/login")
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 def login(request: Request, user_credentials: UserLogin, db: Session = Depends(get_db)):
+    MAX_FAILED_ATTEMPTS = 5
+    LOCKOUT_MINUTES = 15
+
     user = db.query(User).filter(User.email == user_credentials.email).first()
 
+    # Check account lockout
+    if user and user.locked_until and user.locked_until > datetime.now(timezone.utc):
+        remaining = int((user.locked_until - datetime.now(timezone.utc)).total_seconds() / 60) + 1
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Account temporarily locked due to too many failed attempts. Try again in {remaining} minutes."
+        )
+
     if not user or not verify_password(user_credentials.password, user.password_hash):
+        # Increment failed attempts if user exists
+        if user:
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
+                user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+            db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -109,6 +127,9 @@ def login(request: Request, user_credentials: UserLogin, db: Session = Depends(g
             detail="Account has been deactivated. Contact support for assistance."
         )
 
+    # Reset failed attempts on successful login
+    user.failed_login_attempts = 0
+    user.locked_until = None
     user.last_login = datetime.now(timezone.utc)
     db.commit()
 
@@ -123,6 +144,7 @@ def login(request: Request, user_credentials: UserLogin, db: Session = Depends(g
     return response
 
 @router.post("/refresh")
+@limiter.limit("30/minute")
 def refresh(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("refresh_token")
     if not token:
@@ -145,7 +167,7 @@ def refresh(request: Request, db: Session = Depends(get_db)):
         data={"sub": str(user.id)},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
-    new_refresh = create_refresh_token(user.id, db)
+    new_refresh = create_refresh_token(user.id, db, family_id=db_token.family_id)
 
     response = JSONResponse(content={"message": "Tokens refreshed"})
     _set_auth_cookies(response, new_access, new_refresh)
@@ -176,21 +198,19 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid or expired verification link")
 
     user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if user.email_verified:
-        return {"message": "Email already verified. You can log in."}
+    if not user or user.email_verified:
+        # Generic response prevents user enumeration
+        return {"message": "Email verified. You can now log in."}
 
     user.email_verified = True
     user.is_active = True
     db.commit()
 
-    return {"message": "Email verified successfully. You can now log in."}
+    return {"message": "Email verified. You can now log in."}
 
 @router.post("/resend-verification")
-@limiter.limit("3/hour")
-def resend_verification(request: Request, user_data: UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("10/hour")
+def resend_verification(request: Request, user_data: EmailOnly, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == user_data.email).first()
     if not user or user.email_verified:
         # Generic response to prevent enumeration

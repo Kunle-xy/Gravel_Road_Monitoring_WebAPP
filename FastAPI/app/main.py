@@ -26,22 +26,29 @@ app = FastAPI(
     title="Gravel Road API",
     version="2.0.0",
     description="Gravel Road Iowa - TIFF Mapping with Static Tile Generation",
-    redirect_slashes=False
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": f"Too many requests. You are limited to {exc.detail}. Please wait and try again later."
+        },
+    )
+
+app.add_exception_handler(RateLimitExceeded, custom_rate_limit_handler)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         settings.FRONTEND_URL,
-        "http://172.29.50.232:3000",  # WSL2 IP for Windows browser access
         "http://localhost:3000",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # Include routers
@@ -58,7 +65,24 @@ app.include_router(rut_analysis.router)  # New: Rut distress analysis
 async def startup_event():
     """Application startup"""
     import app.models  # noqa: ensure all models are registered
+    from app.models import RefreshToken
+    from app.database import SessionLocal
+    from datetime import datetime, timezone
+
     Base.metadata.create_all(bind=engine)
+
+    # Cleanup expired/revoked refresh tokens
+    db = SessionLocal()
+    try:
+        deleted = db.query(RefreshToken).filter(
+            (RefreshToken.revoked == True) | (RefreshToken.expires_at < datetime.now(timezone.utc))
+        ).delete(synchronize_session=False)
+        db.commit()
+        if deleted:
+            logger.info(f"Cleaned up {deleted} expired/revoked refresh tokens")
+    finally:
+        db.close()
+
     logger.info("Starting Gravel Road API v2.0.0")
     logger.info("Static tile generation enabled")
 

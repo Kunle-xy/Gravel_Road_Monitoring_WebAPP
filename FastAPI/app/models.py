@@ -19,6 +19,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     last_login = Column(DateTime(timezone=True))
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime(timezone=True))
 
     tiff_files = relationship("TiffFile", back_populates="user")
     folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan")
@@ -30,6 +32,7 @@ class RefreshToken(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token = Column(String(255), unique=True, nullable=False, index=True)
+    family_id = Column(UUID(as_uuid=True), nullable=False, default=uuid.uuid4, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
