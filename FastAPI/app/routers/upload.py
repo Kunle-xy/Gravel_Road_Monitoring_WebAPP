@@ -137,6 +137,7 @@ def upload_to_s3(bucket: str, key: str, data: bytes, content_type: str = 'image/
                 logger.warning(f"Failed to abort multipart upload: {abort_error}")
             raise
 
+@router.post("", response_model=TiffFileResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=TiffFileResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = File(...),
@@ -147,10 +148,22 @@ async def upload_file(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    if file_type.upper() not in ['DEM', 'ORTHOPHOTO']:
+    if file_type.upper() not in ['DEM', 'ORTHOPHOTO', 'HILLSHADE']:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="file_type must be 'DEM' or 'ORTHOPHOTO'"
+            detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
+        )
+
+    # Check for duplicate filename for this user in the same folder
+    existing_file = db.query(TiffFile).filter(
+        TiffFile.user_id == current_user.id,
+        TiffFile.filename == file.filename,
+        TiffFile.folder_id == (uuid.UUID(folder_id) if folder_id else None),
+    ).first()
+    if existing_file:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'A file named "{file.filename}" already exists in this project. Please rename the file or delete the existing one first.'
         )
 
     if not file.filename.lower().endswith(('.tif', '.tiff')):

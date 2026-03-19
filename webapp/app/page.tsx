@@ -103,6 +103,10 @@ export default function AuthPage() {
 
       const data = await response.json();
 
+      if (response.status === 429) {
+        throw new Error(data.detail || 'Too many requests. Please wait a few minutes and try again.');
+      }
+
       if (!response.ok) {
         throw new Error(data.detail || 'Authentication failed');
       }
@@ -193,8 +197,10 @@ export default function AuthPage() {
 
               {error && (
                 <div className={`mb-6 p-3 rounded-lg text-sm ${
-                  error.includes('successful') 
+                  error.includes('successful') || error.includes('verification')
                     ? 'bg-green-50 text-green-800 border border-green-200'
+                    : error.includes('Too many requests')
+                    ? 'bg-amber-50 text-amber-800 border border-amber-200'
                     : 'bg-red-50 text-red-800 border border-red-200'
                 }`}>
                   {error}

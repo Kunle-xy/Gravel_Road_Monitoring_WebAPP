@@ -22,6 +22,7 @@ router = APIRouter(
     tags=["folders"]
 )
 
+@router.post("", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)
 def create_folder(
     folder: FolderCreate,
@@ -42,6 +43,7 @@ def create_folder(
 
     return new_folder
 
+@router.get("", response_model=List[FolderResponse])
 @router.get("/", response_model=List[FolderResponse])
 def list_folders(
     db: Session = Depends(get_db),

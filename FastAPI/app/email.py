@@ -34,7 +34,8 @@ def send_verification_email(to_email: str, first_name: str | None = None):
 
 def _send_via_ses(to_email: str, first_name: str | None, verify_url: str):
     import boto3
-    name = first_name or "there"
+    from html import escape
+    name = escape(first_name) if first_name else "there"
 
     html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px;">

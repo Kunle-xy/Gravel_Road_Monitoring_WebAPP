@@ -127,7 +127,7 @@ def _get_deduct_value(density_percent: float, severity: str) -> int:
 def _configure_logging():
     """Configure detailed logging for rut analysis."""
     import os
-    log_dir = '/home/oguntoye/GravelRoad_Iowa/FastAPI/logs'
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'logs')
     os.makedirs(log_dir, exist_ok=True)
 
     logging.basicConfig(
