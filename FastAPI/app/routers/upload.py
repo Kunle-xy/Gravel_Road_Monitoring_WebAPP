@@ -31,11 +31,11 @@ router = APIRouter(prefix="/upload", tags=["Upload"])
 
 # Per-user file limits
 MAX_DEM_PER_USER = 1
-MAX_ORTHO_PER_USER = 1
+MAX_IMAGERY_PER_USER = 1  # Covers both ORTHOPHOTO and HILLSHADE
 
 
 def _check_file_limit(db: Session, user_id, file_type: str):
-    """Enforce per-user file type limits: 1 DEM, 1 ORTHOPHOTO."""
+    """Enforce per-user file type limits: 1 DEM, 1 Hillshade/Orthophoto."""
     ft = file_type.upper()
     if ft == "DEM":
         count = db.query(TiffFile).filter(TiffFile.user_id == user_id, TiffFile.file_type == "DEM").count()
@@ -44,12 +44,16 @@ def _check_file_limit(db: Session, user_id, file_type: str):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You have reached the maximum of {MAX_DEM_PER_USER} DEM file(s). Delete your existing DEM before uploading a new one."
             )
-    elif ft == "ORTHOPHOTO":
-        count = db.query(TiffFile).filter(TiffFile.user_id == user_id, TiffFile.file_type == "ORTHOPHOTO").count()
-        if count >= MAX_ORTHO_PER_USER:
+    elif ft in ("ORTHOPHOTO", "HILLSHADE"):
+        # Count both ORTHOPHOTO and HILLSHADE together — user gets 1 imagery file total
+        count = db.query(TiffFile).filter(
+            TiffFile.user_id == user_id,
+            TiffFile.file_type.in_(["ORTHOPHOTO", "HILLSHADE"])
+        ).count()
+        if count >= MAX_IMAGERY_PER_USER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You have reached the maximum of {MAX_ORTHO_PER_USER} orthophoto file(s). Delete your existing orthophoto before uploading a new one."
+                detail=f"You have reached the maximum of {MAX_IMAGERY_PER_USER} Hillshade/Orthophoto file(s). Delete your existing file before uploading a new one."
             )
 
 s3_client = boto3.client('s3', region_name=settings.AWS_REGION)

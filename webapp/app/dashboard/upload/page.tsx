@@ -18,7 +18,7 @@ const PART_SIZE = 50 * 1024 * 1024;
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileType, setFileType] = useState<'DEM' | 'ORTHOPHOTO'>('DEM');
+  const [fileType, setFileType] = useState<'DEM' | 'HILLSHADE'>('DEM');
   const [folders, setFolders] = useState<FolderOption[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [loadingFolders, setLoadingFolders] = useState(true);
@@ -315,7 +315,7 @@ export default function UploadPage() {
               <Upload size={24} />
               <div>
                 <h2 className="text-lg font-bold text-white">Upload TIFF File</h2>
-                <p className="text-white text-xs opacity-90">DEM or Orthophoto</p>
+                <p className="text-white text-xs opacity-90">DEM or Hillshade/Orthophoto</p>
               </div>
             </div>
           </div>
@@ -329,9 +329,9 @@ export default function UploadPage() {
                   className={`flex-1 py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all ${fileType === 'DEM' ? 'border-slate-500 bg-slate-700 text-white' : 'border-slate-600 bg-slate-800/50 text-white hover:border-slate-500 hover:bg-slate-700/50'}`}>
                   DEM
                 </button>
-                <button onClick={() => setFileType('ORTHOPHOTO')}
-                  className={`flex-1 py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all ${fileType === 'ORTHOPHOTO' ? 'border-slate-500 bg-slate-700 text-white' : 'border-slate-600 bg-slate-800/50 text-white hover:border-slate-500 hover:bg-slate-700/50'}`}>
-                  Ortho
+                <button onClick={() => setFileType('HILLSHADE')}
+                  className={`flex-1 py-2 px-3 rounded-lg border-2 text-sm font-semibold transition-all ${fileType === 'HILLSHADE' ? 'border-slate-500 bg-slate-700 text-white' : 'border-slate-600 bg-slate-800/50 text-white hover:border-slate-500 hover:bg-slate-700/50'}`}>
+                  Hillshade/Ortho
                 </button>
               </div>
             </div>
