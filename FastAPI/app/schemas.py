@@ -205,3 +205,45 @@ class UploadCompleteRequest(BaseModel):
 class UploadCompleteResponse(BaseModel):
     job_id: str
     status: str
+
+
+# Multipart Presigned Upload Schemas
+class MultipartInitRequest(BaseModel):
+    filename: str
+    file_size: int
+    file_type: str  # DEM, ORTHOPHOTO, HILLSHADE
+    folder_id: Optional[uuid_lib.UUID] = None
+    content_type: str = "image/tiff"
+
+class MultipartInitResponse(BaseModel):
+    upload_id: uuid_lib.UUID       # DB record ID
+    s3_key: str
+    s3_upload_id: str              # S3 multipart UploadId
+
+class MultipartPresignPartRequest(BaseModel):
+    s3_key: str
+    s3_upload_id: str
+    part_number: int = Field(..., ge=1, le=10000)
+
+class MultipartPresignPartResponse(BaseModel):
+    presigned_url: str
+    part_number: int
+
+class MultipartCompletePart(BaseModel):
+    part_number: int = Field(..., ge=1, le=10000)
+    etag: str
+
+class MultipartCompleteRequest(BaseModel):
+    upload_id: uuid_lib.UUID
+    s3_key: str
+    s3_upload_id: str
+    parts: List[MultipartCompletePart]
+
+class MultipartCompleteResponse(BaseModel):
+    job_id: str
+    status: str
+
+class MultipartAbortRequest(BaseModel):
+    s3_key: str
+    s3_upload_id: str
+    upload_id: uuid_lib.UUID
