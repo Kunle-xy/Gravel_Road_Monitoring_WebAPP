@@ -97,6 +97,10 @@ export const API_ENDPOINTS = {
     UPLOAD: '/upload',
     PRESIGN: '/upload/presign',
     COMPLETE: '/upload/complete',
+    MULTIPART_INIT: '/upload/multipart/init',
+    MULTIPART_PRESIGN_PART: '/upload/multipart/presign-part',
+    MULTIPART_COMPLETE: '/upload/multipart/complete',
+    MULTIPART_ABORT: '/upload/multipart/abort',
     DELETE: (fileId: string) => `/upload/${fileId}`,
   },
   FOLDERS: {
