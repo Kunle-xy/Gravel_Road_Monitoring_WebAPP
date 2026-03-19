@@ -183,3 +183,25 @@ class RutAnalysisStatusResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Presigned Upload Schemas
+class PresignRequest(BaseModel):
+    filename: str
+    file_size: int
+    file_type: str  # DEM, ORTHOPHOTO, HILLSHADE
+    folder_id: Optional[uuid_lib.UUID] = None
+    content_type: str = "image/tiff"
+
+class PresignResponse(BaseModel):
+    presigned_url: str
+    s3_key: str
+    upload_id: uuid_lib.UUID
+
+class UploadCompleteRequest(BaseModel):
+    upload_id: uuid_lib.UUID
+    s3_key: str
+
+class UploadCompleteResponse(BaseModel):
+    job_id: str
+    status: str

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     SES_FROM_EMAIL: str = ""  # Verified SES sender email (production only)
     EMAIL_VERIFY_EXPIRE_HOURS: int = 24
 
+    # Redis
+    REDIS_PASSWORD: str = ""
+
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"

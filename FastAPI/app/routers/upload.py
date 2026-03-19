@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models import User, TiffFile, Folder
-from app.schemas import TiffFileResponse
+from app.schemas import TiffFileResponse, PresignRequest, PresignResponse, UploadCompleteRequest, UploadCompleteResponse
 from app.auth import get_current_active_user
 from app.config import settings
 from app.cog_utils import convert_to_cog, is_cog as check_is_cog
@@ -384,6 +384,184 @@ async def upload_file(
                 logger.info(f"Cleaned up temp file: {tmp_upload_path}")
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
+
+@router.post("/presign", response_model=PresignResponse, status_code=status.HTTP_200_OK)
+async def presign_upload(
+    body: PresignRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a presigned S3 PUT URL for direct browser-to-S3 upload.
+    Bypasses the Vercel 4.5MB limit and 30s timeout for large TIFF files.
+    """
+    # Validate file_type
+    if body.file_type.upper() not in ['DEM', 'ORTHOPHOTO', 'HILLSHADE']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
+        )
+
+    # Validate filename
+    if not body.filename.lower().endswith(('.tif', '.tiff')):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only TIFF files allowed"
+        )
+
+    # Validate folder if provided
+    folder_uuid = None
+    if body.folder_id:
+        folder = db.query(Folder).filter(
+            Folder.id == body.folder_id,
+            Folder.user_id == current_user.id
+        ).first()
+        if not folder:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Folder not found"
+            )
+        folder_uuid = body.folder_id
+
+    # Check for duplicate filename
+    existing_file = db.query(TiffFile).filter(
+        TiffFile.user_id == current_user.id,
+        TiffFile.filename == body.filename,
+        TiffFile.folder_id == folder_uuid,
+    ).first()
+    if existing_file:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f'A file named "{body.filename}" already exists in this project.'
+        )
+
+    # Generate S3 key
+    s3_key = generate_s3_key(str(current_user.id), body.filename, body.file_type)
+
+    # Generate presigned PUT URL (1 hour expiry)
+    presigned_url = s3_client.generate_presigned_url(
+        'put_object',
+        Params={
+            'Bucket': settings.S3_BUCKET_RAW,
+            'Key': s3_key,
+            'ContentType': body.content_type,
+        },
+        ExpiresIn=3600
+    )
+
+    # Create pending database record
+    db_file = TiffFile(
+        user_id=current_user.id,
+        folder_id=folder_uuid,
+        filename=body.filename,
+        file_type=body.file_type.upper(),
+        original_size_bytes=body.file_size,
+        s3_bucket=settings.S3_BUCKET_RAW,
+        s3_key=s3_key,
+        upload_status='pending',
+        upload_progress=0,
+    )
+    db.add(db_file)
+    db.commit()
+    db.refresh(db_file)
+
+    logger.info(f"Presigned URL generated for {body.filename} (user={current_user.id}, upload_id={db_file.id})")
+
+    return PresignResponse(
+        presigned_url=presigned_url,
+        s3_key=s3_key,
+        upload_id=db_file.id,
+    )
+
+
+@router.post("/complete", response_model=UploadCompleteResponse, status_code=status.HTTP_200_OK)
+async def complete_upload(
+    body: UploadCompleteRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Confirm a presigned upload completed and queue processing.
+    Validates the file exists in S3, updates the DB record, and queues
+    COG conversion + tile generation via Celery.
+    """
+    # Find the pending upload record
+    db_file = db.query(TiffFile).filter(
+        TiffFile.id == body.upload_id,
+        TiffFile.user_id == current_user.id,
+    ).first()
+    if not db_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload record not found"
+        )
+
+    if db_file.upload_status == 'completed':
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload already completed"
+        )
+
+    # Verify file actually exists in S3
+    try:
+        head = s3_client.head_object(
+            Bucket=settings.S3_BUCKET_RAW,
+            Key=body.s3_key,
+        )
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code in ('404', 'NoSuchKey'):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found in S3. Upload may not have completed."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to verify S3 upload: {str(e)}"
+        )
+
+    # Update record with confirmed upload info
+    file_size = head['ContentLength']
+    db_file.original_size_bytes = file_size
+    db_file.upload_status = 'completed'
+    db_file.upload_progress = 100
+    db_file.upload_completed_at = datetime.utcnow()
+    db_file.s3_key = body.s3_key
+
+    # Generate a presigned GET URL for the raw file
+    db_file.s3_url = s3_client.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': settings.S3_BUCKET_RAW, 'Key': body.s3_key},
+        ExpiresIn=604800
+    )
+
+    db.commit()
+
+    # Queue Celery task for COG conversion + tile generation
+    try:
+        task = generate_tiles_task.apply_async(
+            args=[
+                str(db_file.id),
+                settings.S3_BUCKET_RAW,
+                body.s3_key,
+                15,   # min_zoom
+                23,   # max_zoom
+            ],
+            task_id=f"tile_{db_file.id}"
+        )
+        db_file.tile_status = "queued"
+        db.commit()
+        logger.info(f"Upload complete: file={db_file.id}, size={file_size}, celery_task={task.id}")
+
+    except Exception as e:
+        logger.error(f"Failed to queue Celery task for {db_file.id}: {e}")
+        db_file.tile_status = "failed"
+        db_file.tile_error = f"Failed to queue processing: {str(e)}"
+        db.commit()
+        return UploadCompleteResponse(job_id=str(db_file.id), status="queue_failed")
+
+    return UploadCompleteResponse(job_id=task.id, status="processing")
+
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_file(

@@ -280,9 +280,7 @@ async def get_file_tiles_info(
 
     try:
         # Use our own backend tile server (dynamic)
-        backend_url = settings.FRONTEND_URL.replace('3000', '8000')
-        if not backend_url.startswith('http'):
-            backend_url = "http://localhost:8000"
+        backend_url = "http://localhost:8000"
 
         # Dynamic tile endpoints
         tile_url = f"{backend_url}/tiles/{file_id}/{{z}}/{{x}}/{{y}}.png"
