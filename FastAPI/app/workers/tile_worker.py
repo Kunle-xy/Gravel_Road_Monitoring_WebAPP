@@ -185,10 +185,12 @@ def _to_cog(src_path: str, dst_path: str) -> None:
         "gdal_translate",
         "-of", "GTiff",
         "-co", "TILED=YES",
-        "-co", "COMPRESS=DEFLATE",
+        "-co", "COMPRESS=LZW",
+        "-co", "BIGTIFF=YES",
         "-co", "BLOCKXSIZE=512",
         "-co", "BLOCKYSIZE=512",
         "-co", "COPY_SRC_OVERVIEWS=YES",
+        "-co", "NUM_THREADS=ALL_CPUS",
         src_path,
         dst_path
     ]
@@ -211,7 +213,9 @@ def _to_cog(src_path: str, dst_path: str) -> None:
     cmd = [
         "gdaladdo",
         "-r", "average",
-        "--config", "COMPRESS_OVERVIEW", "DEFLATE",
+        "--config", "COMPRESS_OVERVIEW", "LZW",
+        "--config", "BIGTIFF_OVERVIEW", "YES",
+        "--config", "GDAL_NUM_THREADS", "ALL_CPUS",
         dst_path,
         "2", "4", "8", "16", "32", "64"
     ]
@@ -251,7 +255,9 @@ def _to_8bit_for_tiles(src_path: str, dst_path: str) -> None:
         "-ot", "Byte",
         "-scale",  # Auto-scale to 0-255
         "-co", "TILED=YES",
-        "-co", "COMPRESS=DEFLATE",
+        "-co", "COMPRESS=LZW",
+        "-co", "BIGTIFF=YES",
+        "-co", "NUM_THREADS=ALL_CPUS",
         src_path,
         dst_path
     ]
