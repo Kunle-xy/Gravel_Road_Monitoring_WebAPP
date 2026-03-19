@@ -306,9 +306,9 @@ export default function UploadPage() {
   const isUploading = step === 'presigning' || step === 'uploading' || step === 'completing';
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-950">
+    <div className="flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-linear-to-b from-slate-900 to-slate-800 rounded-xl shadow-2xl overflow-hidden ring-1 ring-inset ring-slate-700/50">
+        <div className="bg-linear-to-b from-slate-900/95 to-slate-800/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden ring-1 ring-inset ring-slate-700/50">
 
           <div className="bg-slate-800/50 p-4 border-b border-slate-700/50">
             <div className="flex items-center gap-2 text-white">
