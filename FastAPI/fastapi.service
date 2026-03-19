@@ -1,0 +1,15 @@
+[Unit]
+Description=GravelRoad FastAPI
+After=network.target redis-server.service postgresql.service
+Requires=redis-server.service postgresql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/GravelRoad_Iowa/FastAPI
+EnvironmentFile=/home/ubuntu/GravelRoad_Iowa/FastAPI/.env
+ExecStart=/home/ubuntu/GravelRoad_Iowa/FastAPI/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
