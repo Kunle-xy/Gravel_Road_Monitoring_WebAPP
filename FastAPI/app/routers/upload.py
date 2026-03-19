@@ -29,6 +29,29 @@ from rio_tiler.io import Reader
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
+# Per-user file limits
+MAX_DEM_PER_USER = 1
+MAX_ORTHO_PER_USER = 1
+
+
+def _check_file_limit(db: Session, user_id, file_type: str):
+    """Enforce per-user file type limits: 1 DEM, 1 ORTHOPHOTO."""
+    ft = file_type.upper()
+    if ft == "DEM":
+        count = db.query(TiffFile).filter(TiffFile.user_id == user_id, TiffFile.file_type == "DEM").count()
+        if count >= MAX_DEM_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You have reached the maximum of {MAX_DEM_PER_USER} DEM file(s). Delete your existing DEM before uploading a new one."
+            )
+    elif ft == "ORTHOPHOTO":
+        count = db.query(TiffFile).filter(TiffFile.user_id == user_id, TiffFile.file_type == "ORTHOPHOTO").count()
+        if count >= MAX_ORTHO_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You have reached the maximum of {MAX_ORTHO_PER_USER} orthophoto file(s). Delete your existing orthophoto before uploading a new one."
+            )
+
 s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
 
 def generate_s3_key(user_id: str, filename: str, file_type: str, bucket_type: str = "raw") -> str:
@@ -160,6 +183,9 @@ async def upload_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
         )
+
+    # Enforce per-user file limits
+    _check_file_limit(db, current_user.id, file_type)
 
     # Check for duplicate filename for this user in the same folder
     existing_file = db.query(TiffFile).filter(
@@ -409,6 +435,9 @@ async def presign_upload(
             detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
         )
 
+    # Enforce per-user file limits
+    _check_file_limit(db, current_user.id, body.file_type)
+
     # Validate filename
     if not body.filename.lower().endswith(('.tif', '.tiff')):
         raise HTTPException(
@@ -587,6 +616,9 @@ async def multipart_init(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
         )
+
+    # Enforce per-user file limits
+    _check_file_limit(db, current_user.id, body.file_type)
 
     if not body.filename.lower().endswith(('.tif', '.tiff')):
         raise HTTPException(

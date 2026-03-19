@@ -30,6 +30,14 @@ def create_folder(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new folder for the current user"""
+    # Limit: 1 project per user
+    existing_count = db.query(Folder).filter(Folder.user_id == current_user.id).count()
+    if existing_count >= 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You have reached the maximum of 1 project. Please delete your existing project before creating a new one."
+        )
+
     new_folder = Folder(
         user_id=current_user.id,
         name=folder.name,
