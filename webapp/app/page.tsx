@@ -154,13 +154,13 @@ export default function AuthPage() {
               src={image}
               alt={`Gravel Road ${index + 1}`}
               fill
-              sizes="(max-width: 768px) 100vw, 50vw"  // Responsive sizes
-              quality={85}  // Good balance
+              sizes="50vw"
+              unoptimized
               className={`object-cover transition-opacity duration-1000 ${
                 index === currentImageIndex ? 'opacity-100' : 'opacity-0'
               }`}
-              priority={index === 0}  // Only prioritize first image
-              loading={index === 0 ? undefined : 'lazy'}  // Lazy load others
+              priority={index === 0}
+              loading={index === 0 ? undefined : 'lazy'}
             />
           ))}
                     
