@@ -108,3 +108,4 @@ uploads/
 /upload/
 FASTAPI_BACKEND_ANALYSIS.md
 FastAPI/yolov8l.pt
+*.pt

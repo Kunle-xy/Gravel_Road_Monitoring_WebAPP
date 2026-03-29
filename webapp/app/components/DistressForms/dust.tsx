@@ -1,10 +1,10 @@
 // app/components/DistressForms/dust.tsx
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, Play, AlertCircle, Loader2, Trash2, Video } from "lucide-react";
-import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import { Upload, Play, AlertCircle, Loader2, Trash2, Video, StopCircle } from "lucide-react";
+import { fetchWithAuth, API_ENDPOINTS, API_URL } from "@/app/lib/api";
 
-interface VideoInfo { id: string; filename: string; duration_seconds: number | null; created_at: string; }
+interface VideoInfo { id: string; filename: string; duration_seconds: number | null; }
 interface FolderInfo { id: string; name: string; }
 interface Toast { id: number; message: string; type: "error" | "success" | "info"; }
 
@@ -34,10 +34,8 @@ export default function DustForm() {
   const [firstFrameUrl, setFirstFrameUrl] = useState<string | null>(null);
   const [polygonPoints, setPolygonPoints] = useState<number[][]>([]);
   const [isDrawing, setIsDrawing] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [done, setDone] = useState(false);
-  const [annotatedVideoUrl, setAnnotatedVideoUrl] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
@@ -60,7 +58,7 @@ export default function DustForm() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const selectVideo = async (v: VideoInfo) => {
-    setVideoId(v.id); setPolygonPoints([]); setIsDrawing(true); setDone(false); setAnnotatedVideoUrl(null); setFirstFrameUrl(null);
+    setVideoId(v.id); setPolygonPoints([]); setIsDrawing(true); setIsStreaming(false); setStreamUrl(null); setFirstFrameUrl(null);
     try {
       const r = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(v.id));
       if (r.ok) setFirstFrameUrl(URL.createObjectURL(await r.blob()));
@@ -93,7 +91,7 @@ export default function DustForm() {
       await new Promise<void>((res, rej) => { xhr.onload = () => xhr.status < 300 ? res() : rej(); xhr.onerror = () => rej(); xhr.open("PUT", presigned_url); xhr.setRequestHeader("Content-Type", videoFile.type || "video/mp4"); xhr.send(videoFile); });
       const cRes = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_COMPLETE(video_id), { method: "POST" });
       if (!cRes.ok) throw new Error("Complete failed");
-      setVideoId(video_id); setVideoFile(null); setPolygonPoints([]); setIsDrawing(true); setDone(false); setAnnotatedVideoUrl(null);
+      setVideoId(video_id); setVideoFile(null); setPolygonPoints([]); setIsDrawing(true); setIsStreaming(false); setStreamUrl(null);
       showToast("Uploaded!", "success");
       const fRes = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(video_id));
       if (fRes.ok) setFirstFrameUrl(URL.createObjectURL(await fRes.blob()));
@@ -129,8 +127,10 @@ export default function DustForm() {
       ctx.fillStyle = "#00ffff"; ctx.font = "bold 18px sans-serif"; ctx.fillText(labels[polygonPoints.length], 20, 35);
     }
   }, [polygonPoints, isDrawing]);
+
   useEffect(() => { if (!firstFrameUrl) return; const img = new Image(); img.onload = () => { imageRef.current = img; drawCanvas(); }; img.src = firstFrameUrl; }, [firstFrameUrl, drawCanvas]);
   useEffect(() => { drawCanvas(); }, [polygonPoints, drawCanvas]);
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || polygonPoints.length >= 4) return;
     const c = canvasRef.current; if (!c) return;
@@ -141,30 +141,19 @@ export default function DustForm() {
     if (pts.length === 4) setIsDrawing(false);
   };
 
-  // --- Analysis ---
-  const startAnalysis = async () => {
+  // --- Stream ---
+  const startStream = () => {
     if (!videoId || polygonPoints.length !== 4) return;
-    setIsAnalyzing(true); setProgress(0); setDone(false); setAnnotatedVideoUrl(null);
-    try {
-      const r = await fetchWithAuth(API_ENDPOINTS.DUST.BASE, {
-        method: "POST", body: JSON.stringify({ video_file_id: videoId, polygon_points: polygonPoints }),
-      });
-      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || "Failed"); }
-      const job = await r.json();
-      showToast("Processing video with YOLOv8...", "info");
-      const poll = setInterval(async () => {
-        try {
-          const s = await fetchWithAuth(API_ENDPOINTS.DUST.STATUS(job.id));
-          if (!s.ok) return; const d = await s.json(); setProgress(d.progress);
-          if (d.status === "completed") {
-            clearInterval(poll); setIsAnalyzing(false); setDone(true);
-            const res = await fetchWithAuth(API_ENDPOINTS.DUST.GET(job.id));
-            if (res.ok) { const data = await res.json(); if (data.results_json?.annotated_video_url) setAnnotatedVideoUrl(data.results_json.annotated_video_url); }
-            showToast("Detection complete!", "success");
-          } else if (d.status === "failed") { clearInterval(poll); setIsAnalyzing(false); showToast(d.error_message || "Failed", "error"); }
-        } catch {}
-      }, 2000);
-    } catch (e) { setIsAnalyzing(false); showToast(e instanceof Error ? e.message : "Failed", "error"); }
+    // Build the MJPEG stream URL through the API proxy
+    const url = `${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints)}`;
+    setStreamUrl(url);
+    setIsStreaming(true);
+    showToast("Live detection started!", "info");
+  };
+
+  const stopStream = () => {
+    setStreamUrl(null);
+    setIsStreaming(false);
   };
 
   return (
@@ -175,7 +164,8 @@ export default function DustForm() {
           Object Detection (YOLOv8)
         </h2>
 
-        {!isAnalyzing && !done && (
+        {/* Setup */}
+        {!isStreaming && (
           <div className="space-y-3">
             {loadingVideos ? (
               <div className="flex items-center gap-2 text-slate-400 text-[12px]"><Loader2 size={14} className="animate-spin" /> Loading...</div>
@@ -226,36 +216,35 @@ export default function DustForm() {
             )}
 
             {videoId && polygonPoints.length === 4 && (
-              <button onClick={startAnalysis} className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg">
-                <Play size={18} /> Run Detection
+              <button onClick={startStream} className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg">
+                <Play size={18} /> Run Live Detection
               </button>
             )}
           </div>
         )}
 
-        {isAnalyzing && (
-          <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Loader2 size={18} className="animate-spin text-blue-400" />
-              <span className="text-[14px] font-semibold text-blue-300">Running YOLOv8 detection...</span>
-            </div>
-            <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
-              <div className="bg-blue-500 h-3 transition-all duration-300" style={{ width: `${progress}%` }} />
-            </div>
-            <div className="text-[12px] text-slate-400 mt-2 text-right">{progress}%</div>
-          </div>
-        )}
-
-        {done && (
+        {/* Live Stream */}
+        {isStreaming && (
           <div className="space-y-3">
-            {annotatedVideoUrl && (
-              <video src={annotatedVideoUrl} className="w-full rounded border border-slate-600" style={{ maxHeight: "420px" }} controls autoPlay muted playsInline />
-            )}
-            <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-3">
-              <div className="text-[13px] font-semibold text-green-300 mb-1">Detection Complete</div>
-              <button onClick={() => { setDone(false); setAnnotatedVideoUrl(null); setPolygonPoints([]); setIsDrawing(true); setFirstFrameUrl(null); setVideoId(null); }}
-                className="mt-1 text-[12px] text-cyan-400 hover:text-cyan-300 underline">Run another detection</button>
+            <div className="relative">
+              {/* MJPEG stream displayed as <img> — auto-updates each frame */}
+              {streamUrl && (
+                <img
+                  src={streamUrl}
+                  alt="YOLOv8 Live Detection"
+                  className="w-full rounded border border-slate-600"
+                  style={{ maxHeight: "420px", objectFit: "contain", backgroundColor: "#000" }}
+                />
+              )}
+              <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-red-600/90 px-2 py-1 rounded text-[11px] font-bold text-white">
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                LIVE DETECTION
+              </div>
             </div>
+
+            <button onClick={stopStream} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 text-white rounded-lg text-[13px] font-medium hover:bg-slate-600 transition-colors">
+              <StopCircle size={16} /> Stop & Run Another
+            </button>
           </div>
         )}
       </div>

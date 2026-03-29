@@ -1,21 +1,21 @@
 """
 Dust analysis API — video upload, first frame extraction,
-analysis submission, WebSocket for real-time results.
+live MJPEG streaming with YOLOv8 detection.
 """
 
 import uuid
-import json
 import tempfile
 import os
 import logging
-import asyncio
+import time
 from io import BytesIO
+from typing import Generator
 
 import boto3
 import cv2 as cv
-import redis
+import numpy as np
 
-from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -35,19 +35,17 @@ router = APIRouter(prefix="/dust", tags=["Dust Analysis"])
 s3_client = boto3.client("s3", region_name=settings.AWS_REGION)
 
 
-# --- Video Upload ---
+# --- Video List / Upload ---
 
 @router.get("/videos", response_model=list[VideoFileResponse])
 def list_videos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all videos uploaded by the current user."""
-    videos = db.query(VideoFile).filter(
+    return db.query(VideoFile).filter(
         VideoFile.user_id == current_user.id,
         VideoFile.upload_status == "completed",
     ).order_by(VideoFile.created_at.desc()).all()
-    return videos
 
 
 @router.delete("/video/{video_id}", status_code=204)
@@ -56,20 +54,15 @@ def delete_video(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a video and its S3 object."""
     video = db.query(VideoFile).filter(
-        VideoFile.id == video_id,
-        VideoFile.user_id == current_user.id,
+        VideoFile.id == video_id, VideoFile.user_id == current_user.id,
     ).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-
-    # Delete from S3
     try:
         s3_client.delete_object(Bucket=video.s3_bucket, Key=video.s3_key)
     except Exception as e:
         logger.warning(f"Failed to delete S3 object: {e}")
-
     db.delete(video)
     db.commit()
 
@@ -80,44 +73,28 @@ def presign_video_upload(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get a presigned URL to upload a video to S3."""
     if not body.filename.lower().endswith((".mp4", ".avi", ".mov")):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only video files (.mp4, .avi, .mov) are allowed",
-        )
+        raise HTTPException(status_code=400, detail="Only .mp4, .avi, .mov allowed")
 
     unique_id = uuid.uuid4().hex[:8]
     s3_key = f"videos/{current_user.id}/{unique_id}/{body.filename}"
 
     presigned_url = s3_client.generate_presigned_url(
         "put_object",
-        Params={
-            "Bucket": settings.S3_BUCKET_RAW,
-            "Key": s3_key,
-            "ContentType": body.content_type,
-        },
+        Params={"Bucket": settings.S3_BUCKET_RAW, "Key": s3_key, "ContentType": body.content_type},
         ExpiresIn=3600,
     )
 
     db_video = VideoFile(
-        user_id=current_user.id,
-        folder_id=body.folder_id,
-        filename=body.filename,
-        original_size_bytes=body.file_size,
-        s3_bucket=settings.S3_BUCKET_RAW,
-        s3_key=s3_key,
-        upload_status="pending",
+        user_id=current_user.id, folder_id=body.folder_id,
+        filename=body.filename, original_size_bytes=body.file_size,
+        s3_bucket=settings.S3_BUCKET_RAW, s3_key=s3_key, upload_status="pending",
     )
     db.add(db_video)
     db.commit()
     db.refresh(db_video)
 
-    return VideoPresignResponse(
-        presigned_url=presigned_url,
-        s3_key=s3_key,
-        video_id=db_video.id,
-    )
+    return VideoPresignResponse(presigned_url=presigned_url, s3_key=s3_key, video_id=db_video.id)
 
 
 @router.post("/video/{video_id}/complete", response_model=VideoFileResponse)
@@ -126,15 +103,12 @@ def complete_video_upload(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Mark video upload as complete and extract metadata."""
     video = db.query(VideoFile).filter(
-        VideoFile.id == video_id,
-        VideoFile.user_id == current_user.id,
+        VideoFile.id == video_id, VideoFile.user_id == current_user.id,
     ).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
 
-    # Download just enough to get metadata
     tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
     try:
         s3_client.download_file(video.s3_bucket, video.s3_key, tmp.name)
@@ -162,10 +136,8 @@ def get_first_frame(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Extract and return the first frame of the video as JPEG."""
     video = db.query(VideoFile).filter(
-        VideoFile.id == video_id,
-        VideoFile.user_id == current_user.id,
+        VideoFile.id == video_id, VideoFile.user_id == current_user.id,
     ).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -176,130 +148,104 @@ def get_first_frame(
         cap = cv.VideoCapture(tmp.name)
         ret, frame = cap.read()
         cap.release()
-
         if not ret:
             raise HTTPException(status_code=500, detail="Could not read first frame")
-
         _, buffer = cv.imencode(".jpg", frame, [cv.IMWRITE_JPEG_QUALITY, 90])
-        return StreamingResponse(
-            BytesIO(buffer.tobytes()),
-            media_type="image/jpeg",
-            headers={"Content-Disposition": f"inline; filename=first_frame.jpg"},
-        )
+        return StreamingResponse(BytesIO(buffer.tobytes()), media_type="image/jpeg")
     finally:
         os.unlink(tmp.name)
 
 
-# --- Analysis ---
+# --- Live MJPEG Stream with YOLOv8 ---
 
-@router.post("", response_model=DustAnalysisResponse, status_code=201)
-@router.post("/", response_model=DustAnalysisResponse, status_code=201)
-def create_dust_analysis(
-    body: DustAnalysisCreate,
+def _generate_mjpeg(video_path: str, polygon_points: list) -> Generator[bytes, None, None]:
+    """
+    Generator that reads video frame-by-frame, runs YOLOv8 detection,
+    and yields MJPEG frames for streaming.
+    """
+    from app.workers.dust.detection import detect_and_annotate
+
+    cap = cv.VideoCapture(video_path)
+    if not cap.isOpened():
+        return
+
+    video_fps = cap.get(cv.CAP_PROP_FPS) or 30.0
+    frame_delay = 1.0 / video_fps
+    polygon = np.array(polygon_points, dtype=np.int32)
+
+    try:
+        while cap.isOpened():
+            t_start = time.time()
+
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Run YOLOv8 + draw annotations
+            annotated = detect_and_annotate(frame, polygon)
+
+            # Encode as JPEG
+            _, buffer = cv.imencode(".jpg", annotated, [cv.IMWRITE_JPEG_QUALITY, 80])
+            frame_bytes = buffer.tobytes()
+
+            # Yield as MJPEG boundary
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(frame_bytes)).encode() + b"\r\n"
+                b"\r\n" + frame_bytes + b"\r\n"
+            )
+
+            # Pace to match original video fps
+            elapsed = time.time() - t_start
+            if elapsed < frame_delay:
+                time.sleep(frame_delay - elapsed)
+    finally:
+        cap.release()
+
+
+@router.get("/stream/{video_id}")
+def stream_detection(
+    video_id: uuid.UUID,
+    polygon: str = Query(..., description="Polygon points as JSON: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Submit a dust analysis job."""
+    """
+    Live MJPEG stream — processes video with YOLOv8 and streams annotated frames.
+    Display in browser with: <img src="/dust/stream/{id}?polygon=[[...]]" />
+    """
+    import json
+
     video = db.query(VideoFile).filter(
-        VideoFile.id == body.video_file_id,
-        VideoFile.user_id == current_user.id,
+        VideoFile.id == video_id, VideoFile.user_id == current_user.id,
     ).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
 
-    if len(body.polygon_points) != 4:
-        raise HTTPException(
-            status_code=400,
-            detail="Exactly 4 polygon points required",
-        )
-
-    job = DustAnalysisJob(
-        user_id=current_user.id,
-        video_file_id=body.video_file_id,
-        polygon_points=body.polygon_points,
-        total_frames=video.total_frames or 0,
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-
-    # Queue Celery task
-    from app.workers.dust.task import analyze_dust_task
-    task = analyze_dust_task.apply_async(
-        args=[str(job.id)],
-        task_id=f"dust_{job.id}",
-    )
-    job.celery_task_id = task.id
-    job.status = "queued"
-    db.commit()
-
-    return job
-
-
-@router.get("/{job_id}/status", response_model=DustAnalysisStatusResponse)
-def get_dust_status(
-    job_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Get analysis job status."""
-    job = db.query(DustAnalysisJob).filter(
-        DustAnalysisJob.id == job_id,
-        DustAnalysisJob.user_id == current_user.id,
-    ).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
-
-
-@router.get("/{job_id}", response_model=DustAnalysisResponse)
-def get_dust_result(
-    job_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Get full analysis result."""
-    job = db.query(DustAnalysisJob).filter(
-        DustAnalysisJob.id == job_id,
-        DustAnalysisJob.user_id == current_user.id,
-    ).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
-
-
-# --- WebSocket for real-time results ---
-
-@router.websocket("/{job_id}/ws")
-async def dust_websocket(websocket: WebSocket, job_id: str):
-    """
-    WebSocket endpoint that streams per-frame detection results.
-    Subscribes to Redis pub/sub channel 'dust:{job_id}'.
-    """
-    await websocket.accept()
-
-    r = redis.Redis.from_url(settings.CELERY_BROKER_URL)
-    pubsub = r.pubsub()
-    channel = f"dust:{job_id}"
-    pubsub.subscribe(channel)
-
     try:
-        while True:
-            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
-            if message and message["type"] == "message":
-                data = message["data"]
-                if isinstance(data, bytes):
-                    data = data.decode("utf-8")
-                await websocket.send_text(data)
+        polygon_points = json.loads(polygon)
+        if len(polygon_points) != 4:
+            raise ValueError("Need 4 points")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid polygon: {e}")
 
-                # Check if done
-                parsed = json.loads(data)
-                if parsed.get("done") or parsed.get("error"):
-                    break
-            else:
-                await asyncio.sleep(0.05)
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for dust job {job_id}")
-    finally:
-        pubsub.unsubscribe(channel)
-        pubsub.close()
+    # Download video to temp file
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+    s3_client.download_file(video.s3_bucket, video.s3_key, tmp.name)
+
+    # Note: tmp file is cleaned up when the generator finishes or client disconnects
+    def stream_and_cleanup():
+        try:
+            yield from _generate_mjpeg(tmp.name, polygon_points)
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        stream_and_cleanup(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

@@ -147,9 +147,10 @@ export const API_ENDPOINTS = {
     VIDEO_COMPLETE: (videoId: string) => `/dust/video/${videoId}/complete`,
     VIDEO_DELETE: (videoId: string) => `/dust/video/${videoId}`,
     FIRST_FRAME: (videoId: string) => `/dust/video/${videoId}/first-frame`,
+    STREAM: (videoId: string, polygon: number[][]) =>
+      `/dust/stream/${videoId}?polygon=${encodeURIComponent(JSON.stringify(polygon))}`,
     BASE: '/dust',
     GET: (jobId: string) => `/dust/${jobId}`,
     STATUS: (jobId: string) => `/dust/${jobId}/status`,
-    WS: (jobId: string) => `dust/${jobId}/ws`,
   },
 } as const;
