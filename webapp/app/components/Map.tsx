@@ -49,7 +49,11 @@ function LabelsToggleControl({
   setShowLabels: (show: boolean) => void;
 }) {
   const leafletMap = useLeafletMap();
+  const btnRef = React.useRef<HTMLAnchorElement | null>(null);
+  const showLabelsRef = React.useRef(showLabels);
+  showLabelsRef.current = showLabels;
 
+  // Create control once
   React.useEffect(() => {
     const LabelsControl = L.Control.extend({
       options: { position: "topleft" as L.ControlPosition },
@@ -57,26 +61,17 @@ function LabelsToggleControl({
         const container = L.DomUtil.create("div", "leaflet-bar");
         const btn = L.DomUtil.create("a", "", container);
         btn.href = "#";
-        btn.title = showLabels ? "Hide labels" : "Show labels";
-        btn.setAttribute("aria-label", btn.title);
         btn.style.display = "flex";
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
         btn.style.width = "30px";
         btn.style.height = "30px";
-
-        btn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="${
-            showLabels ? "#2563eb" : "#111827"
-          }" viewBox="0 0 24 24">
-            <path d="M4 4h16v2H4V4zm0 5h16v2H4V9zm0 5h16v2H4v-2zm0 5h10v2H4v-2z"/>
-          </svg>
-        `;
+        btnRef.current = btn;
 
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.on(btn, "click", (e) => {
           L.DomEvent.stop(e);
-          setShowLabels(!showLabels);
+          setShowLabels(!showLabelsRef.current);
         });
 
         return container;
@@ -89,7 +84,24 @@ function LabelsToggleControl({
     return () => {
       leafletMap.removeControl(control);
     };
-  }, [leafletMap, showLabels, setShowLabels]);
+  }, [leafletMap, setShowLabels]);
+
+  // Update appearance without removing/re-adding
+  React.useEffect(() => {
+    const btn = btnRef.current;
+    if (!btn) return;
+    btn.title = showLabels ? "Satellite view" : "Map view";
+    btn.setAttribute("aria-label", btn.title);
+    btn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="${showLabels ? "#2563eb" : "#111827"}" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+        <line x1="8" y1="2" x2="8" y2="18"/>
+        <line x1="16" y1="6" x2="16" y2="22"/>
+      </svg>
+    `;
+  }, [showLabels]);
 
   return null;
 }
@@ -103,7 +115,11 @@ function DrawPolygonControl({
   setMode: (m: Mode) => void;
 }) {
   const leafletMap = useLeafletMap();
+  const btnRef = React.useRef<HTMLAnchorElement | null>(null);
+  const modeRef = React.useRef(mode);
+  modeRef.current = mode;
 
+  // Create control once
   React.useEffect(() => {
     const DrawControl = L.Control.extend({
       options: { position: "topleft" as L.ControlPosition },
@@ -111,26 +127,17 @@ function DrawPolygonControl({
         const container = L.DomUtil.create("div", "leaflet-bar");
         const btn = L.DomUtil.create("a", "", container);
         btn.href = "#";
-        btn.title = mode === "draw" ? "Stop drawing" : "Draw polygon";
-        btn.setAttribute("aria-label", btn.title);
         btn.style.display = "flex";
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
         btn.style.width = "30px";
         btn.style.height = "30px";
-
-        btn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="${
-            mode === "draw" ? "#2563eb" : "#111827"
-          }" viewBox="0 0 24 24">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-        `;
+        btnRef.current = btn;
 
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.on(btn, "click", (e) => {
           L.DomEvent.stop(e);
-          setMode(mode === "draw" ? "pan" : "draw");
+          setMode(modeRef.current === "draw" ? "pan" : "draw");
         });
 
         return container;
@@ -143,7 +150,26 @@ function DrawPolygonControl({
     return () => {
       leafletMap.removeControl(control);
     };
-  }, [leafletMap, mode, setMode]);
+  }, [leafletMap, setMode]);
+
+  // Update appearance on mode change without removing/re-adding
+  React.useEffect(() => {
+    const btn = btnRef.current;
+    if (!btn) return;
+    const active = mode === "draw";
+    btn.title = active ? "Stop drawing" : "Draw polygon";
+    btn.setAttribute("aria-label", btn.title);
+    btn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="${active ? "#2563eb" : "#111827"}" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+        <rect x="2" y="2" width="5" height="5" rx="1" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+        <rect x="17" y="9.5" width="5" height="5" rx="1" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+        <rect x="2" y="17" width="5" height="5" rx="1" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+      </svg>
+    `;
+  }, [mode]);
 
   return null;
 }
@@ -155,6 +181,8 @@ function ClearPolygonsControl({
   onClear: () => void;
 }) {
   const leafletMap = useLeafletMap();
+  const onClearRef = React.useRef(onClear);
+  onClearRef.current = onClear;
 
   React.useEffect(() => {
     const ClearControl = L.Control.extend({
@@ -172,15 +200,20 @@ function ClearPolygonsControl({
         btn.style.height = "30px";
 
         btn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#dc2626" viewBox="0 0 24 24">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/>
+            <path d="M14 11v6"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
           </svg>
         `;
 
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.on(btn, "click", (e) => {
           L.DomEvent.stop(e);
-          onClear();
+          onClearRef.current();
         });
 
         return container;
@@ -193,7 +226,7 @@ function ClearPolygonsControl({
     return () => {
       leafletMap.removeControl(control);
     };
-  }, [leafletMap, onClear]);
+  }, [leafletMap]);
 
   return null;
 }
@@ -324,38 +357,29 @@ function PanToggleControl({
   setMode: (m: Mode) => void;
 }) {
   const leafletMap = useLeafletMap();
+  const btnRef = React.useRef<HTMLAnchorElement | null>(null);
+  const modeRef = React.useRef(mode);
+  modeRef.current = mode;
 
+  // Create control once
   React.useEffect(() => {
     const PanControl = L.Control.extend({
       options: { position: "topleft" as L.ControlPosition },
       onAdd: () => {
         const container = L.DomUtil.create("div", "leaflet-bar");
-
-        // button element, styled like native controls
         const btn = L.DomUtil.create("a", "", container);
         btn.href = "#";
-        btn.title = mode === "pan" ? "Turn off pan" : "Turn on pan";
-        btn.setAttribute("aria-label", btn.title);
         btn.style.display = "flex";
         btn.style.alignItems = "center";
         btn.style.justifyContent = "center";
         btn.style.width = "30px";
         btn.style.height = "30px";
+        btnRef.current = btn;
 
-        // simple svg icon
-        btn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="${
-            mode === "pan" ? "#2563eb" : "#111827"
-          }" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2a1 1 0 0 1 1 1v6.586l1.293-1.293a1 1 0 1 1 1.414 1.414L13 12l2.707 2.293a1 1 0 1 1-1.414 1.414L13 14.414V21a1 1 0 1 1-2 0v-6.586l-1.293 1.293a1 1 0 1 1-1.414-1.414L11 12 8.293 9.707a1 1 0 1 1 1.414-1.414L11 9.586V3a1 1 0 0 1 1-1z"/>
-          </svg>
-        `;
-
-        // stop map drag when clicking the control
         L.DomEvent.disableClickPropagation(container);
         L.DomEvent.on(btn, "click", (e) => {
           L.DomEvent.stop(e);
-          setMode(mode === "pan" ? "none" : "pan");
+          setMode(modeRef.current === "pan" ? "none" : "pan");
         });
 
         return container;
@@ -368,7 +392,26 @@ function PanToggleControl({
     return () => {
       leafletMap.removeControl(control);
     };
-  }, [leafletMap, mode, setMode]);
+  }, [leafletMap, setMode]);
+
+  // Update appearance on mode change without removing/re-adding
+  React.useEffect(() => {
+    const btn = btnRef.current;
+    if (!btn) return;
+    const active = mode === "pan";
+    btn.title = active ? "Turn off pan" : "Turn on pan";
+    btn.setAttribute("aria-label", btn.title);
+    btn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="${active ? "#2563eb" : "#111827"}" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>
+        <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>
+        <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>
+        <path d="M18 8a2 2 0 0 1 2 2v7.4a2 2 0 0 1-.6 1.4l-3 2.9a1 1 0 0 1-.7.3H11a2 2 0 0 1-1.7-1l-4-6.1"/>
+      </svg>
+    `;
+  }, [mode]);
 
   return null;
 }
