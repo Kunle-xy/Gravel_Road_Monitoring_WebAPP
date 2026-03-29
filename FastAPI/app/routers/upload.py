@@ -29,31 +29,34 @@ from rio_tiler.io import Reader
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
-# Per-user file limits
-MAX_DEM_PER_USER = 1
-MAX_IMAGERY_PER_USER = 1  # Covers both ORTHOPHOTO and HILLSHADE
+# Per-project (folder) file limits
+MAX_DEM_PER_PROJECT = 1
+MAX_IMAGERY_PER_PROJECT = 1  # Covers both ORTHOPHOTO and HILLSHADE
 
 
-def _check_file_limit(db: Session, user_id, file_type: str):
-    """Enforce per-user file type limits: 1 DEM, 1 Hillshade/Orthophoto."""
+def _check_file_limit(db: Session, user_id, file_type: str, folder_id=None):
+    """Enforce per-project file type limits: 1 DEM and 1 Hillshade/Orthophoto per project."""
     ft = file_type.upper()
     if ft == "DEM":
-        count = db.query(TiffFile).filter(TiffFile.user_id == user_id, TiffFile.file_type == "DEM").count()
-        if count >= MAX_DEM_PER_USER:
+        query = db.query(TiffFile).filter(TiffFile.user_id == user_id, TiffFile.file_type == "DEM")
+        if folder_id:
+            query = query.filter(TiffFile.folder_id == folder_id)
+        if query.count() >= MAX_DEM_PER_PROJECT:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You have reached the maximum of {MAX_DEM_PER_USER} DEM file(s). Delete your existing DEM before uploading a new one."
+                detail=f"This project already has a DEM file. Delete the existing DEM before uploading a new one."
             )
     elif ft in ("ORTHOPHOTO", "HILLSHADE"):
-        # Count both ORTHOPHOTO and HILLSHADE together — user gets 1 imagery file total
-        count = db.query(TiffFile).filter(
+        query = db.query(TiffFile).filter(
             TiffFile.user_id == user_id,
             TiffFile.file_type.in_(["ORTHOPHOTO", "HILLSHADE"])
-        ).count()
-        if count >= MAX_IMAGERY_PER_USER:
+        )
+        if folder_id:
+            query = query.filter(TiffFile.folder_id == folder_id)
+        if query.count() >= MAX_IMAGERY_PER_PROJECT:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"You have reached the maximum of {MAX_IMAGERY_PER_USER} Hillshade/Orthophoto file(s). Delete your existing file before uploading a new one."
+                detail=f"This project already has a Hillshade/Orthophoto file. Delete the existing file before uploading a new one."
             )
 
 s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
@@ -188,8 +191,8 @@ async def upload_file(
             detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
         )
 
-    # Enforce per-user file limits
-    _check_file_limit(db, current_user.id, file_type)
+    # Enforce per-project file limits
+    _check_file_limit(db, current_user.id, file_type, uuid.UUID(folder_id) if folder_id else None)
 
     # Check for duplicate filename for this user in the same folder
     existing_file = db.query(TiffFile).filter(
@@ -439,9 +442,6 @@ async def presign_upload(
             detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
         )
 
-    # Enforce per-user file limits
-    _check_file_limit(db, current_user.id, body.file_type)
-
     # Validate filename
     if not body.filename.lower().endswith(('.tif', '.tiff')):
         raise HTTPException(
@@ -462,6 +462,9 @@ async def presign_upload(
                 detail="Folder not found"
             )
         folder_uuid = body.folder_id
+
+    # Enforce per-project file limits
+    _check_file_limit(db, current_user.id, body.file_type, folder_uuid)
 
     # Check for duplicate filename
     existing_file = db.query(TiffFile).filter(
@@ -621,9 +624,6 @@ async def multipart_init(
             detail="file_type must be 'DEM', 'ORTHOPHOTO', or 'HILLSHADE'"
         )
 
-    # Enforce per-user file limits
-    _check_file_limit(db, current_user.id, body.file_type)
-
     if not body.filename.lower().endswith(('.tif', '.tiff')):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -642,6 +642,9 @@ async def multipart_init(
                 detail="Folder not found"
             )
         folder_uuid = body.folder_id
+
+    # Enforce per-project file limits
+    _check_file_limit(db, current_user.id, body.file_type, folder_uuid)
 
     existing_file = db.query(TiffFile).filter(
         TiffFile.user_id == current_user.id,
