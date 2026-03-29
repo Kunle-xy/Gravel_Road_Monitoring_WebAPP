@@ -112,6 +112,23 @@ class TiffFileListResponse(BaseModel):
     total: int
     files: List[TiffFileResponse]
 
+class VideoFileResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    folder_id: Optional[uuid_lib.UUID] = None
+    filename: str
+    original_size_bytes: int
+    upload_status: str
+    total_frames: Optional[int] = None
+    fps: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class FolderWithFilesResponse(BaseModel):
     id: uuid_lib.UUID
     user_id: uuid_lib.UUID
@@ -381,24 +398,6 @@ class VideoPresignResponse(BaseModel):
     presigned_url: str
     s3_key: str
     video_id: uuid_lib.UUID
-
-class VideoFileResponse(BaseModel):
-    id: uuid_lib.UUID
-    user_id: uuid_lib.UUID
-    folder_id: Optional[uuid_lib.UUID] = None
-    filename: str
-    original_size_bytes: int
-    upload_status: str
-    total_frames: Optional[int] = None
-    fps: Optional[float] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    duration_seconds: Optional[float] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
 
 # Dust Analysis Schemas
 class DustAnalysisCreate(BaseModel):
