@@ -63,8 +63,10 @@ export default function DustForm() {
   const [done, setDone] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const chartCanvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const animFrameRef = useRef<number>(0);
@@ -247,6 +249,77 @@ export default function DustForm() {
     if (newPoints.length === 4) setIsDrawing(false);
   };
 
+  // --- Draw polygon overlay on video ---
+  const drawVideoOverlay = useCallback(() => {
+    const overlay = overlayCanvasRef.current;
+    const video = videoRef.current;
+    const container = videoContainerRef.current;
+    if (!overlay || !video || !container || polygonPoints.length !== 4) return;
+
+    // Match overlay to video display size
+    const rect = video.getBoundingClientRect();
+    overlay.width = rect.width;
+    overlay.height = rect.height;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+
+    const ctx = overlay.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    // Scale polygon points from original video resolution to display size
+    const scaleX = rect.width / (video.videoWidth || 1);
+    const scaleY = rect.height / (video.videoHeight || 1);
+
+    const scaledPoints = polygonPoints.map(([x, y]) => [x * scaleX, y * scaleY]);
+
+    // Cyan polygon
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(0, 255, 255, 0.12)";
+
+    ctx.beginPath();
+    ctx.moveTo(scaledPoints[0][0], scaledPoints[0][1]);
+    for (let i = 1; i < scaledPoints.length; i++) {
+      ctx.lineTo(scaledPoints[i][0], scaledPoints[i][1]);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Vertex dots
+    scaledPoints.forEach((pt) => {
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], 5, 0, Math.PI * 2);
+      ctx.fillStyle = "#00ff00";
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+  }, [polygonPoints]);
+
+  // Redraw overlay when video resizes or loads
+  useEffect(() => {
+    if (!isAnalyzing && !done) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onLoaded = () => drawVideoOverlay();
+    video.addEventListener("loadeddata", onLoaded);
+    video.addEventListener("resize", drawVideoOverlay);
+
+    // Also draw after a short delay to handle layout shifts
+    const timer = setTimeout(drawVideoOverlay, 200);
+
+    return () => {
+      video.removeEventListener("loadeddata", onLoaded);
+      video.removeEventListener("resize", drawVideoOverlay);
+      clearTimeout(timer);
+    };
+  }, [isAnalyzing, done, drawVideoOverlay]);
+
   // --- Chart with time-synced cursor ---
   const drawChart = useCallback((currentTime?: number) => {
     const canvas = chartCanvasRef.current;
@@ -347,13 +420,14 @@ export default function DustForm() {
     ctx.fillText(`Processed: ${frameResults.length} samples`, pad.left + 4, h - 5);
   }, [frameResults, videoDuration]);
 
-  // Animate chart cursor with video playback
+  // Animate chart cursor with video playback + keep overlay in sync
   useEffect(() => {
     if (!isAnalyzing && !done) return;
 
     const animate = () => {
       const video = videoRef.current;
       drawChart(video ? video.currentTime : undefined);
+      drawVideoOverlay();
       animFrameRef.current = requestAnimationFrame(animate);
     };
     animFrameRef.current = requestAnimationFrame(animate);
@@ -518,14 +592,21 @@ export default function DustForm() {
           <div className="space-y-3 mt-2">
             {/* Video Player */}
             {videoPlayUrl && (
-              <div className="relative">
+              <div ref={videoContainerRef} className="relative">
                 <video
                   ref={videoRef}
                   src={videoPlayUrl}
                   className="w-full rounded border border-slate-600"
-                  style={{ maxHeight: "320px" }}
+                  style={{ maxHeight: "360px" }}
                   muted
                   playsInline
+                  controls
+                />
+                {/* Polygon overlay on top of video */}
+                <canvas
+                  ref={overlayCanvasRef}
+                  className="absolute top-0 left-0 pointer-events-none"
+                  style={{ maxHeight: "360px" }}
                 />
                 {isAnalyzing && (
                   <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-red-600/90 px-2 py-1 rounded text-[11px] font-bold text-white">
