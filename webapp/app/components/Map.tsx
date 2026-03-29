@@ -90,7 +90,7 @@ function LabelsToggleControl({
   React.useEffect(() => {
     const btn = btnRef.current;
     if (!btn) return;
-    btn.title = showLabels ? "Satellite view" : "Map view";
+    btn.title = showLabels ? "Map view" : "Satellite view";
     btn.setAttribute("aria-label", btn.title);
     btn.style.backgroundColor = showLabels ? "#e0e7ff" : "";
     btn.innerHTML = `
@@ -421,7 +421,7 @@ function PanToggleControl({
 
 export default function Map() {
   const [mode, setMode] = React.useState<Mode>("pan");
-  const [showLabels, setShowLabels] = React.useState(true);
+  const [showSatellite, setShowSatellite] = React.useState(false);
   const [polygons, setPolygons] = React.useState<L.Polygon[]>([]);
   const [mapInstance, setMapInstance] = React.useState<L.Map | null>(null);
   const { addPolygon, clearPolygons: clearPolygonsContext, polygons: savedPolygons } = usePolygons();
@@ -519,19 +519,19 @@ export default function Map() {
           if (map) setMapInstance(map);
         }}
       >
-        {/* Base layer - with or without labels */}
-        {showLabels ? (
+        {/* Base layer - map or satellite */}
+        {showSatellite ? (
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.esri.com">Esri</a>'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             maxZoom={26}
             maxNativeZoom={19}
             minZoom={1}
           />
         ) : (
           <TileLayer
-            attribution='&copy; <a href="https://www.esri.com">Esri</a>'
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={26}
             maxNativeZoom={19}
             minZoom={1}
@@ -545,7 +545,7 @@ export default function Map() {
         <MapInstanceRegistration />
         <MapInteractions mode={mode} />
         <PanToggleControl mode={mode} setMode={setMode} />
-        <LabelsToggleControl showLabels={showLabels} setShowLabels={setShowLabels} />
+        <LabelsToggleControl showLabels={showSatellite} setShowLabels={setShowSatellite} />
         <DrawPolygonControl mode={mode} setMode={setMode} />
         <ClearPolygonsControl onClear={handleClearPolygons} />
         <PolygonDrawing mode={mode} onPolygonComplete={handlePolygonComplete} />
