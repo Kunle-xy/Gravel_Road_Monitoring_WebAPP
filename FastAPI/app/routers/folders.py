@@ -7,8 +7,8 @@ from botocore.exceptions import ClientError
 import logging
 
 from app.database import get_db
-from app.models import User, Folder, TiffFile
-from app.schemas import FolderCreate, FolderUpdate, FolderResponse, FolderWithFilesResponse, TiffFileResponse
+from app.models import User, Folder, TiffFile, VideoFile
+from app.schemas import FolderCreate, FolderUpdate, FolderResponse, FolderWithFilesResponse, TiffFileResponse, VideoFileResponse
 from app.auth import get_current_user
 from app.config import settings
 
@@ -74,9 +74,15 @@ def list_folders_with_files(
         Folder.user_id == current_user.id
     ).order_by(Folder.created_at.desc()).all()
 
-    # Build response with files
+    # Build response with files and videos
     response = []
     for folder in folders:
+        # Get videos for this folder
+        folder_videos = db.query(VideoFile).filter(
+            VideoFile.folder_id == folder.id,
+            VideoFile.upload_status == "completed",
+        ).all()
+
         folder_data = FolderWithFilesResponse(
             id=folder.id,
             user_id=folder.user_id,
@@ -86,7 +92,8 @@ def list_folders_with_files(
             is_expanded=folder.is_expanded,
             created_at=folder.created_at,
             updated_at=folder.updated_at,
-            files=[TiffFileResponse.from_orm(f) for f in folder.tiff_files]
+            files=[TiffFileResponse.from_orm(f) for f in folder.tiff_files],
+            videos=[VideoFileResponse.from_orm(v) for v in folder_videos],
         )
         response.append(folder_data)
 

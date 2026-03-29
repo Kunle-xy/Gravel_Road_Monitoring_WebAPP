@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Trash2, Edit2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Trash2, Edit2, Video } from 'lucide-react';
 import TiffFileItem from '../TiffFiles/TiffFileItem';
 import { fetchWithAuth, API_ENDPOINTS } from '@/app/lib/api';
 
@@ -20,6 +20,13 @@ interface TiffFile {
   tile_progress?: number;
 }
 
+interface VideoFileInfo {
+  id: string;
+  filename: string;
+  duration_seconds?: number;
+  total_frames?: number;
+}
+
 interface FolderTreeItemProps {
   folder: {
     id: string;
@@ -28,6 +35,7 @@ interface FolderTreeItemProps {
     color: string;
     is_expanded: boolean;
     files: TiffFile[];
+    videos?: VideoFileInfo[];
   };
   onDelete: (fileId: string, filename: string) => void;
   onRefresh: () => void;
@@ -196,7 +204,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
               />
             ) : (
               <span className="flex-1 text-sm font-medium truncate">
-                {folder.name} ({folder.files.length})
+                {folder.name} ({folder.files.length + (folder.videos?.length || 0)})
               </span>
             )}
 
@@ -265,6 +273,31 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                   </div>
                 );
               })()}
+
+              {/* Videos Section */}
+              {folder.videos && folder.videos.length > 0 && (
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
+                    Videos ({folder.videos.length})
+                  </div>
+                  <div className="space-y-2">
+                    {folder.videos.map((video) => (
+                      <div
+                        key={video.id}
+                        className="flex items-center gap-2 px-2 py-1.5 bg-slate-700/30 rounded text-[12px]"
+                      >
+                        <Video size={14} className="text-cyan-400 shrink-0" />
+                        <span className="flex-1 truncate text-slate-200">{video.filename}</span>
+                        {video.duration_seconds && (
+                          <span className="text-slate-500 text-[10px] shrink-0">
+                            {video.duration_seconds.toFixed(0)}s
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

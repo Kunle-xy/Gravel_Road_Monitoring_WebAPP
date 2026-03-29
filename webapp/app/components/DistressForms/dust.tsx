@@ -51,6 +51,11 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
 export default function DustForm() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  // Projects (folders)
+  interface FolderInfo { id: string; name: string; }
+  const [folders, setFolders] = useState<FolderInfo[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
+
   // Existing videos
   const [existingVideos, setExistingVideos] = useState<VideoInfo[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(true);
@@ -94,22 +99,29 @@ export default function DustForm() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   };
 
-  // --- Fetch existing videos ---
-  const fetchVideos = useCallback(async () => {
+  // --- Fetch folders + existing videos ---
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEOS);
-      if (res.ok) {
-        const data = await res.json();
-        setExistingVideos(data);
+      const [videosRes, foldersRes] = await Promise.all([
+        fetchWithAuth(API_ENDPOINTS.DUST.VIDEOS),
+        fetchWithAuth(API_ENDPOINTS.FOLDERS.LIST),
+      ]);
+      if (videosRes.ok) setExistingVideos(await videosRes.json());
+      if (foldersRes.ok) {
+        const foldersData = await foldersRes.json();
+        setFolders(foldersData);
+        if (foldersData.length > 0 && !selectedFolderId) {
+          setSelectedFolderId(foldersData[0].id);
+        }
       }
     } catch {
       // Ignore
     } finally {
       setLoadingVideos(false);
     }
-  }, []);
+  }, [selectedFolderId]);
 
-  useEffect(() => { fetchVideos(); }, [fetchVideos]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   // --- Select existing video ---
   const selectVideo = async (video: VideoInfo) => {
@@ -176,6 +188,7 @@ export default function DustForm() {
         body: JSON.stringify({
           filename: videoFile.name,
           file_size: videoFile.size,
+          folder_id: selectedFolderId || undefined,
           content_type: videoFile.type || "video/mp4",
         }),
       });
@@ -222,7 +235,7 @@ export default function DustForm() {
       }
 
       // Refresh video list
-      fetchVideos();
+      fetchData();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -559,6 +572,19 @@ export default function DustForm() {
               <label className="font-semibold text-[12px] text-slate-300 mb-1 block">
                 {existingVideos.length > 0 ? "Or Upload New Video" : "Upload Video"}
               </label>
+              {/* Project selector */}
+              {folders.length > 0 && (
+                <select
+                  value={selectedFolderId}
+                  onChange={(e) => setSelectedFolderId(e.target.value)}
+                  className="w-full mb-2 text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-slate-100 focus:outline-none focus:border-cyan-400"
+                >
+                  <option value="">No project</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              )}
               <div className="flex gap-2">
                 <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 border border-slate-600 border-dashed rounded-lg cursor-pointer hover:bg-slate-600 transition-colors">
                   <Upload size={16} />

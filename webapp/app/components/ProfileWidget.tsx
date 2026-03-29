@@ -29,6 +29,13 @@ interface TiffFile {
   upload_status?: string;
 }
 
+interface VideoInfo {
+  id: string;
+  filename: string;
+  duration_seconds?: number;
+  total_frames?: number;
+}
+
 interface Folder {
   id: string;
   name: string;
@@ -36,6 +43,7 @@ interface Folder {
   color: string;
   is_expanded: boolean;
   files: TiffFile[];
+  videos?: VideoInfo[];
 }
 
 interface CompletedJob {

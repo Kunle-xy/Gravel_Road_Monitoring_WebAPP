@@ -122,6 +122,7 @@ class FolderWithFilesResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
     files: List[TiffFileResponse]
+    videos: List[VideoFileResponse] = []
 
     class Config:
         from_attributes = True
