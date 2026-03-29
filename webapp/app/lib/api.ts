@@ -3,6 +3,10 @@
 // Use same-origin proxy (/api) so cookies work across all environments
 export const API_URL = '/api';
 
+// WebSocket URL — must connect directly to backend (not through Next.js rewrite)
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const WS_URL = BACKEND_URL.replace(/^http/, 'ws');
+
 // Prevent multiple concurrent refresh attempts
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;

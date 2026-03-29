@@ -2,7 +2,7 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Upload, Play, AlertCircle, Loader2, X } from "lucide-react";
-import { fetchWithAuth, API_ENDPOINTS, API_URL } from "@/app/lib/api";
+import { fetchWithAuth, API_ENDPOINTS, WS_URL } from "@/app/lib/api";
 
 interface FrameResult {
   frame: number;
@@ -339,12 +339,8 @@ export default function DustForm() {
       setJobId(job.id);
       showToast("Analysis started!", "info");
 
-      // Open WebSocket
-      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsBase = API_URL.startsWith("http")
-        ? API_URL.replace(/^http/, "ws")
-        : `${wsProtocol}//${window.location.host}${API_URL}`;
-      const wsUrl = `${wsBase}/${API_ENDPOINTS.DUST.WS(job.id)}`;
+      // Open WebSocket directly to backend (bypasses Next.js rewrite)
+      const wsUrl = `${WS_URL}/${API_ENDPOINTS.DUST.WS(job.id)}`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
