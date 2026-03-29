@@ -373,6 +373,7 @@ class CorrugationAnalysisStatusResponse(BaseModel):
 class VideoPresignRequest(BaseModel):
     filename: str
     file_size: int
+    folder_id: Optional[uuid_lib.UUID] = None
     content_type: str = "video/mp4"
 
 class VideoPresignResponse(BaseModel):
@@ -383,6 +384,7 @@ class VideoPresignResponse(BaseModel):
 class VideoFileResponse(BaseModel):
     id: uuid_lib.UUID
     user_id: uuid_lib.UUID
+    folder_id: Optional[uuid_lib.UUID] = None
     filename: str
     original_size_bytes: int
     upload_status: str

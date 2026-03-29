@@ -37,6 +37,43 @@ s3_client = boto3.client("s3", region_name=settings.AWS_REGION)
 
 # --- Video Upload ---
 
+@router.get("/videos", response_model=list[VideoFileResponse])
+def list_videos(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List all videos uploaded by the current user."""
+    videos = db.query(VideoFile).filter(
+        VideoFile.user_id == current_user.id,
+        VideoFile.upload_status == "completed",
+    ).order_by(VideoFile.created_at.desc()).all()
+    return videos
+
+
+@router.delete("/video/{video_id}", status_code=204)
+def delete_video(
+    video_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a video and its S3 object."""
+    video = db.query(VideoFile).filter(
+        VideoFile.id == video_id,
+        VideoFile.user_id == current_user.id,
+    ).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # Delete from S3
+    try:
+        s3_client.delete_object(Bucket=video.s3_bucket, Key=video.s3_key)
+    except Exception as e:
+        logger.warning(f"Failed to delete S3 object: {e}")
+
+    db.delete(video)
+    db.commit()
+
+
 @router.post("/video/presign", response_model=VideoPresignResponse)
 def presign_video_upload(
     body: VideoPresignRequest,
@@ -65,6 +102,7 @@ def presign_video_upload(
 
     db_video = VideoFile(
         user_id=current_user.id,
+        folder_id=body.folder_id,
         filename=body.filename,
         original_size_bytes=body.file_size,
         s3_bucket=settings.S3_BUCKET_RAW,

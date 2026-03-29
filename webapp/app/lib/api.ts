@@ -142,8 +142,10 @@ export const API_ENDPOINTS = {
     COMPLETED: '/corrugation/completed',
   },
   DUST: {
+    VIDEOS: '/dust/videos',
     VIDEO_PRESIGN: '/dust/video/presign',
     VIDEO_COMPLETE: (videoId: string) => `/dust/video/${videoId}/complete`,
+    VIDEO_DELETE: (videoId: string) => `/dust/video/${videoId}`,
     FIRST_FRAME: (videoId: string) => `/dust/video/${videoId}/first-frame`,
     BASE: '/dust',
     GET: (jobId: string) => `/dust/${jobId}`,

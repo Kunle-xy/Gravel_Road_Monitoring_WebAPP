@@ -231,6 +231,7 @@ class VideoFile(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
     filename = Column(String(255), nullable=False)
     original_size_bytes = Column(BigInteger, nullable=False)
     s3_bucket = Column(String(255), nullable=False)
@@ -247,6 +248,7 @@ class VideoFile(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     user = relationship("User", backref="video_files")
+    folder = relationship("Folder", backref="video_files")
     dust_analyses = relationship("DustAnalysisJob", back_populates="video_file", cascade="all, delete-orphan")
 
 

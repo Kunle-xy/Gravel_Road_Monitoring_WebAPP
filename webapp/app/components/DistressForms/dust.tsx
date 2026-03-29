@@ -1,8 +1,17 @@
 // app/components/DistressForms/dust.tsx
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, Play, AlertCircle, Loader2 } from "lucide-react";
+import { Upload, Play, AlertCircle, Loader2, Trash2, Video } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS, WS_URL } from "@/app/lib/api";
+
+interface VideoInfo {
+  id: string;
+  filename: string;
+  total_frames: number | null;
+  fps: number | null;
+  duration_seconds: number | null;
+  created_at: string;
+}
 
 interface FrameResult {
   frame: number;
@@ -41,25 +50,33 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
 
 export default function DustForm() {
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Existing videos
+  const [existingVideos, setExistingVideos] = useState<VideoInfo[]>([]);
+  const [loadingVideos, setLoadingVideos] = useState(true);
+
+  // Upload
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [videoId, setVideoId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // First frame for polygon drawing
+  // Selected video
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [fps, setFps] = useState(30);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [totalFrames, setTotalFrames] = useState(0);
+
+  // First frame + polygon
   const [firstFrameUrl, setFirstFrameUrl] = useState<string | null>(null);
   const [polygonPoints, setPolygonPoints] = useState<number[][]>([]);
   const [isDrawing, setIsDrawing] = useState(true);
 
-  // Video playback
+  // Video playback (local file URL)
   const [videoPlayUrl, setVideoPlayUrl] = useState<string | null>(null);
-  const [fps, setFps] = useState(30);
-  const [videoDuration, setVideoDuration] = useState(0);
 
   // Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [frameResults, setFrameResults] = useState<FrameResult[]>([]);
-  const [totalFrames, setTotalFrames] = useState(0);
   const [done, setDone] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,7 +94,67 @@ export default function DustForm() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   };
 
-  // --- Upload ---
+  // --- Fetch existing videos ---
+  const fetchVideos = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEOS);
+      if (res.ok) {
+        const data = await res.json();
+        setExistingVideos(data);
+      }
+    } catch {
+      // Ignore
+    } finally {
+      setLoadingVideos(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchVideos(); }, [fetchVideos]);
+
+  // --- Select existing video ---
+  const selectVideo = async (video: VideoInfo) => {
+    setVideoId(video.id);
+    setFps(video.fps || 30);
+    setVideoDuration(video.duration_seconds || 0);
+    setTotalFrames(video.total_frames || 0);
+    setPolygonPoints([]);
+    setIsDrawing(true);
+    setFrameResults([]);
+    setDone(false);
+    setVideoPlayUrl(null);
+    setFirstFrameUrl(null);
+
+    // Fetch first frame
+    try {
+      const frameRes = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(video.id));
+      if (frameRes.ok) {
+        const blob = await frameRes.blob();
+        setFirstFrameUrl(URL.createObjectURL(blob));
+      }
+    } catch {
+      showToast("Failed to load first frame");
+    }
+  };
+
+  // --- Delete video ---
+  const deleteVideo = async (id: string) => {
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_DELETE(id), { method: "DELETE" });
+      if (res.ok) {
+        setExistingVideos((prev) => prev.filter((v) => v.id !== id));
+        if (videoId === id) {
+          setVideoId(null);
+          setFirstFrameUrl(null);
+          setVideoPlayUrl(null);
+        }
+        showToast("Video deleted", "success");
+      }
+    } catch {
+      showToast("Failed to delete video");
+    }
+  };
+
+  // --- Upload new video ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -86,13 +163,6 @@ export default function DustForm() {
       return;
     }
     setVideoFile(file);
-    setVideoId(null);
-    setFirstFrameUrl(null);
-    setVideoPlayUrl(null);
-    setPolygonPoints([]);
-    setFrameResults([]);
-    setDone(false);
-    setIsDrawing(true);
   };
 
   const handleUpload = async () => {
@@ -112,7 +182,6 @@ export default function DustForm() {
       if (!presignRes.ok) throw new Error("Failed to get presigned URL");
       const { presigned_url, video_id } = await presignRes.json();
 
-      // Upload to S3
       const xhr = new XMLHttpRequest();
       xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
@@ -126,9 +195,7 @@ export default function DustForm() {
         xhr.send(videoFile);
       });
 
-      const completeRes = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_COMPLETE(video_id), {
-        method: "POST",
-      });
+      const completeRes = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_COMPLETE(video_id), { method: "POST" });
       if (!completeRes.ok) throw new Error("Failed to complete upload");
       const videoData = await completeRes.json();
 
@@ -136,17 +203,26 @@ export default function DustForm() {
       setTotalFrames(videoData.total_frames || 0);
       setFps(videoData.fps || 30);
       setVideoDuration(videoData.duration_seconds || 0);
+      setPolygonPoints([]);
+      setIsDrawing(true);
+      setFrameResults([]);
+      setDone(false);
+
+      // Local playback URL
+      setVideoPlayUrl(URL.createObjectURL(videoFile));
+      setVideoFile(null);
+
       showToast("Video uploaded!", "success");
 
-      // Create a local object URL for video playback (from the file the user already has)
-      setVideoPlayUrl(URL.createObjectURL(videoFile));
-
-      // Fetch first frame for polygon drawing
+      // Fetch first frame
       const frameRes = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(video_id));
       if (frameRes.ok) {
         const blob = await frameRes.blob();
         setFirstFrameUrl(URL.createObjectURL(blob));
       }
+
+      // Refresh video list
+      fetchVideos();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -154,12 +230,11 @@ export default function DustForm() {
     }
   };
 
-  // --- Polygon Drawing (cyan + visible dots) ---
+  // --- Polygon Drawing (cyan + green dots) ---
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const img = imageRef.current;
     if (!canvas || !img) return;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -168,31 +243,20 @@ export default function DustForm() {
     ctx.drawImage(img, 0, 0);
 
     if (polygonPoints.length > 0) {
-      // Cyan polygon
       ctx.strokeStyle = "#00ffff";
       ctx.lineWidth = 3;
       ctx.fillStyle = "rgba(0, 255, 255, 0.15)";
-
       ctx.beginPath();
       ctx.moveTo(polygonPoints[0][0], polygonPoints[0][1]);
-      for (let i = 1; i < polygonPoints.length; i++) {
-        ctx.lineTo(polygonPoints[i][0], polygonPoints[i][1]);
-      }
-      if (polygonPoints.length === 4) {
-        ctx.closePath();
-        ctx.fill();
-      }
+      for (let i = 1; i < polygonPoints.length; i++) ctx.lineTo(polygonPoints[i][0], polygonPoints[i][1]);
+      if (polygonPoints.length === 4) { ctx.closePath(); ctx.fill(); }
       ctx.stroke();
 
-      // Vertex dots — large, bright green with white outline
       polygonPoints.forEach((pt, i) => {
-        // Outer glow
         ctx.beginPath();
         ctx.arc(pt[0], pt[1], 12, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
         ctx.fill();
-
-        // Inner dot
         ctx.beginPath();
         ctx.arc(pt[0], pt[1], 8, 0, Math.PI * 2);
         ctx.fillStyle = "#00ff00";
@@ -200,8 +264,6 @@ export default function DustForm() {
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 3;
         ctx.stroke();
-
-        // Label
         ctx.fillStyle = "#ffffff";
         ctx.font = "bold 16px sans-serif";
         ctx.strokeStyle = "#000000";
@@ -211,12 +273,10 @@ export default function DustForm() {
       });
     }
 
-    // Instructions
     if (polygonPoints.length < 4 && isDrawing) {
       const labels = ["Click TOP-LEFT corner", "Click TOP-RIGHT corner", "Click BOTTOM-RIGHT corner", "Click BOTTOM-LEFT corner"];
       ctx.fillStyle = "rgba(0,0,0,0.8)";
-      const textWidth = ctx.measureText(labels[polygonPoints.length]).width;
-      ctx.fillRect(10, 10, Math.max(textWidth + 30, 300), 36);
+      ctx.fillRect(10, 10, 320, 36);
       ctx.fillStyle = "#00ffff";
       ctx.font = "bold 18px sans-serif";
       ctx.fillText(labels[polygonPoints.length], 20, 35);
@@ -226,10 +286,7 @@ export default function DustForm() {
   useEffect(() => {
     if (!firstFrameUrl) return;
     const img = new Image();
-    img.onload = () => {
-      imageRef.current = img;
-      drawCanvas();
-    };
+    img.onload = () => { imageRef.current = img; drawCanvas(); };
     img.src = firstFrameUrl;
   }, [firstFrameUrl, drawCanvas]);
 
@@ -249,47 +306,32 @@ export default function DustForm() {
     if (newPoints.length === 4) setIsDrawing(false);
   };
 
-  // --- Draw polygon overlay on video ---
+  // --- Polygon overlay on video ---
   const drawVideoOverlay = useCallback(() => {
     const overlay = overlayCanvasRef.current;
     const video = videoRef.current;
-    const container = videoContainerRef.current;
-    if (!overlay || !video || !container || polygonPoints.length !== 4) return;
-
-    // Match overlay to video display size
+    if (!overlay || !video || polygonPoints.length !== 4) return;
     const rect = video.getBoundingClientRect();
     overlay.width = rect.width;
     overlay.height = rect.height;
     overlay.style.width = `${rect.width}px`;
     overlay.style.height = `${rect.height}px`;
-
     const ctx = overlay.getContext("2d");
     if (!ctx) return;
-
     ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    // Scale polygon points from original video resolution to display size
     const scaleX = rect.width / (video.videoWidth || 1);
     const scaleY = rect.height / (video.videoHeight || 1);
-
-    const scaledPoints = polygonPoints.map(([x, y]) => [x * scaleX, y * scaleY]);
-
-    // Cyan polygon
+    const scaled = polygonPoints.map(([x, y]) => [x * scaleX, y * scaleY]);
     ctx.strokeStyle = "#00ffff";
     ctx.lineWidth = 2;
     ctx.fillStyle = "rgba(0, 255, 255, 0.12)";
-
     ctx.beginPath();
-    ctx.moveTo(scaledPoints[0][0], scaledPoints[0][1]);
-    for (let i = 1; i < scaledPoints.length; i++) {
-      ctx.lineTo(scaledPoints[i][0], scaledPoints[i][1]);
-    }
+    ctx.moveTo(scaled[0][0], scaled[0][1]);
+    for (let i = 1; i < scaled.length; i++) ctx.lineTo(scaled[i][0], scaled[i][1]);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-
-    // Vertex dots
-    scaledPoints.forEach((pt) => {
+    scaled.forEach((pt) => {
       ctx.beginPath();
       ctx.arc(pt[0], pt[1], 5, 0, Math.PI * 2);
       ctx.fillStyle = "#00ff00";
@@ -300,33 +342,12 @@ export default function DustForm() {
     });
   }, [polygonPoints]);
 
-  // Redraw overlay when video resizes or loads
-  useEffect(() => {
-    if (!isAnalyzing && !done) return;
-    const video = videoRef.current;
-    if (!video) return;
-
-    const onLoaded = () => drawVideoOverlay();
-    video.addEventListener("loadeddata", onLoaded);
-    video.addEventListener("resize", drawVideoOverlay);
-
-    // Also draw after a short delay to handle layout shifts
-    const timer = setTimeout(drawVideoOverlay, 200);
-
-    return () => {
-      video.removeEventListener("loadeddata", onLoaded);
-      video.removeEventListener("resize", drawVideoOverlay);
-      clearTimeout(timer);
-    };
-  }, [isAnalyzing, done, drawVideoOverlay]);
-
-  // --- Chart with time-synced cursor ---
+  // --- Chart ---
   const drawChart = useCallback((currentTime?: number) => {
     const canvas = chartCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
     const w = canvas.width;
     const h = canvas.height;
     const pad = { top: 20, right: 20, bottom: 30, left: 70 };
@@ -337,7 +358,6 @@ export default function DustForm() {
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(0, 0, w, h);
 
-    // Grid lines
     ctx.strokeStyle = "#334155";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -345,21 +365,17 @@ export default function DustForm() {
     ctx.lineTo(pad.left + plotW, pad.top);
     ctx.moveTo(pad.left, pad.top + plotH);
     ctx.lineTo(pad.left + plotW, pad.top + plotH);
-    // Middle dashed line
     ctx.setLineDash([4, 4]);
     ctx.moveTo(pad.left, pad.top + plotH / 2);
     ctx.lineTo(pad.left + plotW, pad.top + plotH / 2);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Y-axis labels
     ctx.fillStyle = "#94a3b8";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "right";
     ctx.fillText("Truck", pad.left - 10, pad.top + 14);
     ctx.fillText("No Truck", pad.left - 10, pad.top + plotH + 4);
-
-    // X-axis label
     ctx.textAlign = "center";
     ctx.fillText("Time (s)", pad.left + plotW / 2, h - 5);
 
@@ -368,19 +384,16 @@ export default function DustForm() {
     const maxTime = videoDuration > 0 ? videoDuration : (frameResults[frameResults.length - 1]?.time || 10);
     const xScale = plotW / maxTime;
 
-    // Plot line — cyan to match polygon
     ctx.strokeStyle = "#00ffff";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     frameResults.forEach((r, i) => {
       const x = pad.left + r.time * xScale;
       const y = r.truck ? pad.top + 6 : pad.top + plotH - 6;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
 
-    // Fill under truck
     ctx.fillStyle = "rgba(0, 255, 255, 0.08)";
     ctx.beginPath();
     ctx.moveTo(pad.left, pad.top + plotH);
@@ -389,12 +402,10 @@ export default function DustForm() {
       const y = r.truck ? pad.top + 6 : pad.top + plotH - 6;
       ctx.lineTo(x, y);
     });
-    const lastX = pad.left + frameResults[frameResults.length - 1].time * xScale;
-    ctx.lineTo(lastX, pad.top + plotH);
+    ctx.lineTo(pad.left + frameResults[frameResults.length - 1].time * xScale, pad.top + plotH);
     ctx.closePath();
     ctx.fill();
 
-    // Cursor line synced to video playback
     if (currentTime !== undefined && currentTime >= 0) {
       const cx = pad.left + currentTime * xScale;
       if (cx >= pad.left && cx <= pad.left + plotW) {
@@ -404,8 +415,6 @@ export default function DustForm() {
         ctx.moveTo(cx, pad.top);
         ctx.lineTo(cx, pad.top + plotH);
         ctx.stroke();
-
-        // Time label on cursor
         ctx.fillStyle = "#f97316";
         ctx.font = "bold 11px sans-serif";
         ctx.textAlign = "center";
@@ -413,17 +422,15 @@ export default function DustForm() {
       }
     }
 
-    // Stats in bottom-left
     ctx.fillStyle = "#64748b";
     ctx.textAlign = "left";
     ctx.font = "11px sans-serif";
-    ctx.fillText(`Processed: ${frameResults.length} samples`, pad.left + 4, h - 5);
+    ctx.fillText(`Processed: ${frameResults.length} frames`, pad.left + 4, h - 5);
   }, [frameResults, videoDuration]);
 
-  // Animate chart cursor with video playback + keep overlay in sync
+  // Animation loop
   useEffect(() => {
     if (!isAnalyzing && !done) return;
-
     const animate = () => {
       const video = videoRef.current;
       drawChart(video ? video.currentTime : undefined);
@@ -431,11 +438,10 @@ export default function DustForm() {
       animFrameRef.current = requestAnimationFrame(animate);
     };
     animFrameRef.current = requestAnimationFrame(animate);
-
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [isAnalyzing, done, drawChart]);
+  }, [isAnalyzing, done, drawChart, drawVideoOverlay]);
 
-  // --- Start Analysis + WebSocket ---
+  // --- Start Analysis ---
   const startAnalysis = async () => {
     if (!videoId || polygonPoints.length !== 4) return;
     setIsAnalyzing(true);
@@ -445,16 +451,12 @@ export default function DustForm() {
     try {
       const res = await fetchWithAuth(API_ENDPOINTS.DUST.BASE, {
         method: "POST",
-        body: JSON.stringify({
-          video_file_id: videoId,
-          polygon_points: polygonPoints,
-        }),
+        body: JSON.stringify({ video_file_id: videoId, polygon_points: polygonPoints }),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || "Failed to start analysis");
       }
-
       const job = await res.json();
       showToast("Analysis started!", "info");
 
@@ -464,14 +466,13 @@ export default function DustForm() {
         videoRef.current.play();
       }
 
-      // Open WebSocket
+      // WebSocket
       const wsUrl = `${WS_URL}/${API_ENDPOINTS.DUST.WS(job.id)}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-
         if (data.done) {
           setDone(true);
           setIsAnalyzing(false);
@@ -487,18 +488,13 @@ export default function DustForm() {
           ws.close();
           return;
         }
-
         setFrameResults((prev) => [...prev, {
           frame: data.frame,
           time: data.time || (data.frame / fps),
           truck: data.truck,
         }]);
       };
-
-      ws.onerror = () => {
-        showToast("WebSocket connection error", "error");
-        setIsAnalyzing(false);
-      };
+      ws.onerror = () => { showToast("WebSocket connection error", "error"); setIsAnalyzing(false); };
       ws.onclose = () => { wsRef.current = null; };
     } catch (err) {
       setIsAnalyzing(false);
@@ -510,6 +506,7 @@ export default function DustForm() {
 
   const truckCount = frameResults.filter((r) => r.truck).length;
   const noTruckCount = frameResults.filter((r) => !r.truck).length;
+  const showAnalysis = isAnalyzing || done;
 
   return (
     <>
@@ -519,78 +516,116 @@ export default function DustForm() {
           Dust Detection (YOLOv8)
         </h2>
 
-        {/* Step 1: Upload */}
-        {!videoId && (
-          <div className="space-y-2">
-            <label className="font-semibold text-[12px] text-slate-300">Upload Video</label>
-            <div className="flex gap-2">
-              <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 border border-slate-600 border-dashed rounded-lg cursor-pointer hover:bg-slate-600 transition-colors">
-                <Upload size={16} />
-                <span className="text-[12px] truncate">
-                  {videoFile ? videoFile.name : "Select .mp4 video file"}
-                </span>
-                <input type="file" accept=".mp4,.avi,.mov" onChange={handleFileSelect} className="hidden" />
+        {/* Video Selection — existing videos or upload new */}
+        {!showAnalysis && (
+          <div className="space-y-3">
+            {/* Existing Videos */}
+            {loadingVideos ? (
+              <div className="flex items-center gap-2 text-slate-400 text-[12px]">
+                <Loader2 size={14} className="animate-spin" /> Loading videos...
+              </div>
+            ) : existingVideos.length > 0 && (
+              <div>
+                <label className="font-semibold text-[12px] text-slate-300 mb-1 block">Previous Videos</label>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {existingVideos.map((v) => (
+                    <div
+                      key={v.id}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded text-[12px] cursor-pointer transition-colors ${
+                        videoId === v.id ? "bg-cyan-900/40 border border-cyan-700/50" : "bg-slate-700/50 hover:bg-slate-700"
+                      }`}
+                      onClick={() => selectVideo(v)}
+                    >
+                      <Video size={14} className="text-slate-400 shrink-0" />
+                      <span className="flex-1 truncate">{v.filename}</span>
+                      <span className="text-slate-500 text-[10px] shrink-0">
+                        {v.duration_seconds ? `${v.duration_seconds.toFixed(0)}s` : ""}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteVideo(v.id); }}
+                        className="text-red-400 hover:text-red-300 shrink-0"
+                        title="Delete video"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Upload New */}
+            <div>
+              <label className="font-semibold text-[12px] text-slate-300 mb-1 block">
+                {existingVideos.length > 0 ? "Or Upload New Video" : "Upload Video"}
               </label>
-              <button
-                onClick={handleUpload}
-                disabled={!videoFile || uploading}
-                className={`px-4 py-2.5 rounded-lg text-[12px] font-medium transition-colors ${
-                  !videoFile || uploading ? "bg-slate-700 text-slate-500 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
-              >
-                {uploading ? `${uploadProgress}%` : "Upload"}
-              </button>
+              <div className="flex gap-2">
+                <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 border border-slate-600 border-dashed rounded-lg cursor-pointer hover:bg-slate-600 transition-colors">
+                  <Upload size={16} />
+                  <span className="text-[12px] truncate">{videoFile ? videoFile.name : "Select .mp4 file"}</span>
+                  <input type="file" accept=".mp4,.avi,.mov" onChange={handleFileSelect} className="hidden" />
+                </label>
+                <button
+                  onClick={handleUpload}
+                  disabled={!videoFile || uploading}
+                  className={`px-4 py-2.5 rounded-lg text-[12px] font-medium transition-colors ${
+                    !videoFile || uploading ? "bg-slate-700 text-slate-500 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700"
+                  }`}
+                >
+                  {uploading ? `${uploadProgress}%` : "Upload"}
+                </button>
+              </div>
+              {uploading && (
+                <div className="w-full bg-slate-700 rounded-full h-1.5 mt-1">
+                  <div className="bg-blue-500 h-1.5 transition-all" style={{ width: `${uploadProgress}%` }} />
+                </div>
+              )}
             </div>
-            {uploading && (
-              <div className="w-full bg-slate-700 rounded-full h-1.5">
-                <div className="bg-blue-500 h-1.5 transition-all" style={{ width: `${uploadProgress}%` }} />
+
+            {/* Polygon Drawing on First Frame */}
+            {firstFrameUrl && (
+              <div className="space-y-2 border-t border-slate-700 pt-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-[12px] text-slate-300">
+                    {isDrawing ? `Select road boundary (${polygonPoints.length}/4)` : "Road boundary set"}
+                  </label>
+                  {polygonPoints.length > 0 && (
+                    <button
+                      onClick={() => { setPolygonPoints([]); setIsDrawing(true); }}
+                      className="text-[11px] text-red-400 hover:text-red-300"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <canvas
+                  ref={canvasRef}
+                  onClick={handleCanvasClick}
+                  className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : "cursor-default"}`}
+                  style={{ maxHeight: "380px", objectFit: "contain" }}
+                />
+              </div>
+            )}
+
+            {/* Start Button */}
+            {videoId && polygonPoints.length === 4 && (
+              <div className="pt-1">
+                <button
+                  onClick={startAnalysis}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg"
+                >
+                  <Play size={18} />
+                  Start Analysis
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Step 2: Draw Polygon */}
-        {firstFrameUrl && !isAnalyzing && !done && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="font-semibold text-[12px] text-slate-300">
-                {isDrawing ? `Select road boundary (${polygonPoints.length}/4)` : "Road boundary set"}
-              </label>
-              {polygonPoints.length > 0 && (
-                <button
-                  onClick={() => { setPolygonPoints([]); setIsDrawing(true); }}
-                  className="text-[11px] text-red-400 hover:text-red-300"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-            <canvas
-              ref={canvasRef}
-              onClick={handleCanvasClick}
-              className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : "cursor-default"}`}
-              style={{ maxHeight: "380px", objectFit: "contain" }}
-            />
-          </div>
-        )}
-
-        {/* Step 3: Start */}
-        {videoId && polygonPoints.length === 4 && !isAnalyzing && !done && (
-          <div className="pt-3">
-            <button
-              onClick={startAnalysis}
-              className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg"
-            >
-              <Play size={18} />
-              Start Analysis
-            </button>
-          </div>
-        )}
-
-        {/* Video Player + Chart (shown during/after analysis) */}
-        {(isAnalyzing || done) && (
-          <div className="space-y-3 mt-2">
-            {/* Video Player */}
+        {/* Video Player + Chart (during/after analysis) */}
+        {showAnalysis && (
+          <div className="space-y-3">
+            {/* Video Player with polygon overlay */}
             {videoPlayUrl && (
               <div ref={videoContainerRef} className="relative">
                 <video
@@ -602,7 +637,6 @@ export default function DustForm() {
                   playsInline
                   controls
                 />
-                {/* Polygon overlay on top of video */}
                 <canvas
                   ref={overlayCanvasRef}
                   className="absolute top-0 left-0 pointer-events-none"
@@ -623,24 +657,16 @@ export default function DustForm() {
                 <label className="font-semibold text-[12px] text-slate-300">
                   {isAnalyzing ? (
                     <span className="flex items-center gap-1">
-                      <Loader2 size={12} className="animate-spin" />
-                      Detecting vehicles...
+                      <Loader2 size={12} className="animate-spin" /> Detecting vehicles...
                     </span>
                   ) : "Detection Results"}
                 </label>
-                <span className="text-[11px] text-slate-400">
-                  {frameResults.length} samples
-                </span>
+                <span className="text-[11px] text-slate-400">{frameResults.length} frames</span>
               </div>
-              <canvas
-                ref={chartCanvasRef}
-                width={700}
-                height={180}
-                className="w-full rounded border border-slate-600"
-              />
+              <canvas ref={chartCanvasRef} width={700} height={180} className="w-full rounded border border-slate-600" />
             </div>
 
-            {/* Live Stats */}
+            {/* Stats */}
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="bg-slate-700/50 rounded p-2">
                 <div className="text-[20px] font-bold text-cyan-400">{truckCount}</div>
@@ -663,8 +689,14 @@ export default function DustForm() {
               <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-3">
                 <div className="text-[13px] font-semibold text-green-300 mb-1">Analysis Complete</div>
                 <div className="text-[12px] text-slate-300">
-                  Processed {frameResults.length} samples. Vehicle detected in {truckCount} ({((truckCount / Math.max(frameResults.length, 1)) * 100).toFixed(1)}%).
+                  Processed {frameResults.length} frames. Vehicle detected in {truckCount} ({((truckCount / Math.max(frameResults.length, 1)) * 100).toFixed(1)}%).
                 </div>
+                <button
+                  onClick={() => { setDone(false); setFrameResults([]); setPolygonPoints([]); setIsDrawing(true); setFirstFrameUrl(null); }}
+                  className="mt-2 text-[12px] text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  Run another analysis
+                </button>
               </div>
             )}
           </div>
