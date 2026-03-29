@@ -270,21 +270,25 @@ def _to_8bit_for_tiles(src_path: str, dst_path: str) -> None:
         raise
 
 
-def _xyz_with_gdal2tiles(cog_path: str, out_dir: str, min_zoom: int, max_zoom: int) -> None:
+def _xyz_with_gdal2tiles(cog_path: str, out_dir: str, min_zoom: int, max_zoom: int, file_type: str = "DEM") -> None:
     """
-    Generate XYZ tiles using gdal2tiles.py
+    Generate 256×256 XYZ tiles using gdal2tiles.py
 
     Note: gdal2tiles requires 8-bit imagery. The input cog_path should be
     an 8-bit file created by _to_8bit_for_tiles()
     """
-    logger.info(f"Generating tiles: zoom {min_zoom}-{max_zoom}")
+    logger.info(f"Generating 256x256 tiles: zoom {min_zoom}-{max_zoom}, type={file_type}")
+
+    # Use lanczos for imagery (sharper), average for DEMs (smoother)
+    resampling = "lanczos" if file_type in ("ORTHOPHOTO", "HILLSHADE") else "average"
 
     cmd = [
         "gdal2tiles.py",
         "-z", f"{min_zoom}-{max_zoom}",
+        "--tilesize=256",
         "--processes", "4",
         "--webviewer", "none",
-        "--resampling", "average",
+        "--resampling", resampling,
         "--xyz",  # Use XYZ tile scheme
         cog_path,
         out_dir
@@ -367,7 +371,7 @@ def _bounds_wgs84(path: str) -> tuple:
     max_retries=3,
     default_retry_delay=300  # 5 minutes
 )
-def generate_tiles_task(self, file_id: str, s3_bucket: str, s3_key: str, min_zoom: int = 15, max_zoom: int = 21):
+def generate_tiles_task(self, file_id: str, s3_bucket: str, s3_key: str, min_zoom: int = 12, max_zoom: int = 21):
     """
     Celery task for generating tiles from uploaded TIFF files
 
@@ -439,7 +443,7 @@ def generate_tiles_task(self, file_id: str, s3_bucket: str, s3_key: str, min_zoo
             db_file.tile_progress = 45
             db.commit()
             os.makedirs(tiles_dir, exist_ok=True)
-            _xyz_with_gdal2tiles(local_8bit, tiles_dir, min_zoom, max_zoom)
+            _xyz_with_gdal2tiles(local_8bit, tiles_dir, min_zoom, max_zoom, db_file.file_type)
 
             # Step 6: Upload to S3 (75-100%)
             logger.info("[6/6] Uploading tiles to S3")

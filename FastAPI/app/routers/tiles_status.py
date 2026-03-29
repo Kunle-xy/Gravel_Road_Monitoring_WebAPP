@@ -120,8 +120,8 @@ async def retry_tile_generation(
                 str(file.id),
                 file.s3_bucket,
                 file.cog_s3_key,
-                15,  # min_zoom
-                21   # max_zoom
+                12,  # min_zoom - visible when zoomed out
+                21   # max_zoom - road-level detail
             ],
             task_id=f"tile_{file.id}"
         )
