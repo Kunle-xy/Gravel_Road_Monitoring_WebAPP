@@ -21,7 +21,7 @@ from app.workers.dust.detection import detect_vehicles_in_frame
 
 logger = logging.getLogger(__name__)
 
-FRAME_SKIP = 30  # Process every 30th frame for speed
+FRAME_SKIP = 1  # Process every frame (RTX 5000 handles ~30fps)
 
 
 def get_redis_client():
@@ -91,31 +91,30 @@ def analyze_dust_task(self, job_id: str):
             if not ret:
                 break
 
-            # Only process every Nth frame
-            if frame_idx % FRAME_SKIP == 0:
-                detection = detect_vehicles_in_frame(frame, polygon)
-                truck_detected = detection["truck_detected"]
+            detection = detect_vehicles_in_frame(frame, polygon)
+            truck_detected = detection["truck_detected"]
 
-                if truck_detected:
-                    truck_count += 1
-                else:
-                    no_truck_count += 1
+            if truck_detected:
+                truck_count += 1
+            else:
+                no_truck_count += 1
 
-                time_seconds = round(frame_idx / video_fps, 2)
+            time_seconds = round(frame_idx / video_fps, 2)
 
-                frame_result = {
-                    "frame": frame_idx,
-                    "time": time_seconds,
-                    "truck": truck_detected,
-                    "vehicle_count": len([v for v in detection["vehicles"] if v["inside_polygon"]]),
-                }
-                results.append(frame_result)
-                sample_count += 1
+            frame_result = {
+                "frame": frame_idx,
+                "time": time_seconds,
+                "truck": truck_detected,
+                "vehicle_count": len([v for v in detection["vehicles"] if v["inside_polygon"]]),
+            }
+            results.append(frame_result)
+            sample_count += 1
 
-                # Publish to Redis for WebSocket consumers
-                redis_client.publish(channel, json.dumps(frame_result))
+            # Publish to Redis for WebSocket consumers
+            redis_client.publish(channel, json.dumps(frame_result))
 
-                # Update progress
+            # Update DB progress every 30 frames (avoid DB overhead per frame)
+            if frame_idx % 30 == 0:
                 progress = int((frame_idx / max(total_frames, 1)) * 100)
                 job.progress = min(progress, 99)
                 job.truck_frames = truck_count
