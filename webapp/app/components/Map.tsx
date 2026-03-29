@@ -92,6 +92,7 @@ function LabelsToggleControl({
     if (!btn) return;
     btn.title = showLabels ? "Satellite view" : "Map view";
     btn.setAttribute("aria-label", btn.title);
+    btn.style.backgroundColor = showLabels ? "#e0e7ff" : "";
     btn.innerHTML = `
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
         fill="none" stroke="${showLabels ? "#2563eb" : "#111827"}" stroke-width="2"
@@ -159,6 +160,7 @@ function DrawPolygonControl({
     const active = mode === "draw";
     btn.title = active ? "Stop drawing" : "Draw polygon";
     btn.setAttribute("aria-label", btn.title);
+    btn.style.backgroundColor = active ? "#e0e7ff" : "";
     btn.innerHTML = `
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
         fill="none" stroke="${active ? "#2563eb" : "#111827"}" stroke-width="2"
@@ -401,6 +403,7 @@ function PanToggleControl({
     const active = mode === "pan";
     btn.title = active ? "Turn off pan" : "Turn on pan";
     btn.setAttribute("aria-label", btn.title);
+    btn.style.backgroundColor = active ? "#e0e7ff" : "";
     btn.innerHTML = `
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
         fill="none" stroke="${active ? "#2563eb" : "#111827"}" stroke-width="2"
