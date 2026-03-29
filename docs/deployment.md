@@ -5,47 +5,64 @@
 | Role | Host | What runs |
 |------|------|-----------|
 | Frontend | Vercel (webapp-mu-puce.vercel.app) | Next.js 16 |
-| API + DB + Redis | EC2 t3.medium (52.15.33.164) | FastAPI, PostgreSQL 16, Redis 7 |
-| Workers | ISU (129.186.252.201) | Celery tile + rut workers |
+| API + DB + Redis + Workers | ISU server (129.186.252.201) | FastAPI, PostgreSQL 16, Redis 7, Celery |
+| Tunnel | Cloudflare (api.prosper-gravelroad.com) | Encrypted tunnel to ISU |
 
-## EC2 Setup
+## ISU Server Setup
 
-### Services
-```bash
-sudo systemctl status fastapi       # FastAPI (port 8000)
-sudo systemctl status redis          # Redis (port 6379)
-sudo systemctl status postgresql@16-main  # PostgreSQL (port 5432)
-```
+### Systemd Services
 
-### FastAPI service
-Defined in `/etc/systemd/system/fastapi.service`. Auto-starts on boot, auto-restarts on crash.
+All services auto-start on boot and auto-restart on crash:
 
 ```bash
-sudo systemctl restart fastapi       # after code or .env changes
-sudo journalctl -u fastapi -f        # tail logs
+sudo systemctl status fastapi          # FastAPI API (port 8000, localhost only)
+sudo systemctl status celery-tiles     # Celery tile worker (-c 4)
+sudo systemctl status celery-analysis  # Celery analysis worker (-c 3)
+sudo systemctl status cloudflared      # Cloudflare Tunnel
+sudo systemctl status postgresql       # PostgreSQL (port 5432, localhost only)
+sudo systemctl status redis-server     # Redis (port 6379, localhost only)
 ```
 
-### Swap
-2GB swap at `/swapfile` (active on boot).
+### Service Files
 
-### Security Groups
-- Port 8000: open to Vercel (API)
-- Port 6379: open to 129.186.252.201/32 only (Redis for Celery)
-- Port 5432: open to 129.186.252.201/32 only (PostgreSQL for workers)
+- `/etc/systemd/system/fastapi.service` — Uvicorn on 127.0.0.1:8000
+- `/etc/systemd/system/celery-tiles.service` — Tile generation queue
+- `/etc/systemd/system/celery-analysis.service` — Rut/crown/corrugation queue
+- `/etc/systemd/system/cloudflared.service` — Tunnel agent
 
-### PostgreSQL remote access
-- `listen_addresses = '*'` in postgresql.conf
-- pg_hba.conf allows `kunle_admin` from `129.186.252.201/32` to `gravel_road_app`
+### Network
 
-### Redis
-- Bound to 0.0.0.0:6379
-- Password protected (set in redis.conf `requirepass`)
+**No inbound ports are open.** All external access goes through the Cloudflare Tunnel.
 
-## ISU Server Connection Strings
+- PostgreSQL: bound to localhost only
+- Redis: bound to localhost, password protected
+- FastAPI: bound to 127.0.0.1 only
+- Cloudflare Tunnel: outbound connection from ISU to Cloudflare edge
+
+### Cloudflare Tunnel
+
+- Tunnel name: `gravel-road`
+- Tunnel ID: `2ae92001-f00d-48f1-b121-d71a92cb90d8`
+- Domain: `api.prosper-gravelroad.com`
+- Config: `/etc/cloudflared/config.yml`
+- Credentials: `/etc/cloudflared/2ae92001-f00d-48f1-b121-d71a92cb90d8.json`
+
+### Python Environment
+
+Managed with **UV** (not pip):
+
+```bash
+cd ~/GravelRoad_Iowa/FastAPI
+uv add <package>         # add dependency
+uv run uvicorn ...       # run with venv
+uv run celery ...        # run with venv
+```
+
+### Connection Strings (all localhost)
 
 ```
-Redis:      redis://:PASSWORD@52.15.33.164:6379/0
-PostgreSQL: postgresql://kunle_admin:prosper@52.15.33.164:5432/gravel_road_app
+PostgreSQL: postgresql://kunle_admin:PASSWORD@localhost:5432/gravel_road_app
+Redis:      redis://:PASSWORD@localhost:6379/0
 ```
 
 ## AWS Resources
@@ -56,12 +73,16 @@ PostgreSQL: postgresql://kunle_admin:prosper@52.15.33.164:5432/gravel_road_app
 | S3 raw bucket | gravel-road-raw-file |
 | S3 tiles bucket | gravel-road-app-file |
 | CloudFront | d18o6mwudgwpmq.cloudfront.net |
-| IAM role | gravel-road-ec2-role |
+| Domain | prosper-gravelroad.com (Cloudflare registrar) |
 
 S3 CORS is configured on `gravel-road-raw-file` to allow browser PUT uploads from Vercel origins.
 
+AWS credentials: set via `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env` (no IAM role — not on EC2).
+
 ## Vercel
 
-Deploys automatically on push to `main`. Environment variables set in Vercel dashboard.
+Deploys automatically on push to `main`. Environment variables set in Vercel dashboard:
 
-API requests are proxied via Next.js rewrites (`/api/*` -> `http://52.15.33.164:8000/*`).
+- `NEXT_PUBLIC_API_URL` = `https://api.prosper-gravelroad.com`
+
+API requests proxy through Next.js rewrites (`/api/*` → `https://api.prosper-gravelroad.com/*`).
