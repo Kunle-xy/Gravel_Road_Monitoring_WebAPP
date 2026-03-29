@@ -460,7 +460,7 @@ export default function DustForm() {
               ref={canvasRef}
               onClick={handleCanvasClick}
               className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : "cursor-default"}`}
-              style={{ maxHeight: "240px", objectFit: "contain" }}
+              style={{ maxHeight: "360px", objectFit: "contain" }}
             />
           </div>
         )}
@@ -500,8 +500,8 @@ export default function DustForm() {
             {/* Chart */}
             <canvas
               ref={chartCanvasRef}
-              width={500}
-              height={140}
+              width={700}
+              height={180}
               className="w-full rounded border border-slate-600"
             />
 

@@ -25,7 +25,7 @@ const DistressFormsOverlay = () => {
           onClick={() => setActiveDistress(null)}
         />
         {/* Centered modal */}
-        <div className="relative bg-white outline rounded-lg p-4 w-[32rem] max-w-[95vw] max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="relative bg-white outline rounded-lg p-5 w-[44rem] max-w-[95vw] max-h-[90vh] overflow-y-auto shadow-2xl">
           <button
             onClick={() => setActiveDistress(null)}
             className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"
