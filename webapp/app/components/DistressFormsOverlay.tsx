@@ -23,8 +23,8 @@ const DistressFormsOverlay = () => {
         <div className="w-full">
           {activeDistress === 'Rut' && <RutForm />}
           {activeDistress === 'Corrugation' && <CorrugationForm />}
-          {activeDistress === 'Loose Aggregate' && <div>Loose Aggregate form coming soon...</div>}
           {activeDistress === 'Crown' && <CrownForm />}
+          {activeDistress === 'Loose Aggregate' && <div>Loose Aggregate form coming soon...</div>}
           {activeDistress === 'Potholes' && <div>Potholes form coming soon...</div>}
           {activeDistress === 'Dust' && <div>Dust form coming soon...</div>}
           {activeDistress === 'Drainage' && <div>Drainage form coming soon...</div>}
