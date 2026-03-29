@@ -137,4 +137,13 @@ export const API_ENDPOINTS = {
     DELETE: (jobId: string) => `/corrugation/${jobId}`,
     COMPLETED: '/corrugation/completed',
   },
+  DUST: {
+    VIDEO_PRESIGN: '/dust/video/presign',
+    VIDEO_COMPLETE: (videoId: string) => `/dust/video/${videoId}/complete`,
+    FIRST_FRAME: (videoId: string) => `/dust/video/${videoId}/first-frame`,
+    BASE: '/dust',
+    GET: (jobId: string) => `/dust/${jobId}`,
+    STATUS: (jobId: string) => `/dust/${jobId}/status`,
+    WS: (jobId: string) => `dust/${jobId}/ws`,
+  },
 } as const;

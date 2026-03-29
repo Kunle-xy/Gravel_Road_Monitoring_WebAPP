@@ -34,4 +34,6 @@ dependencies = [
     "aiofiles>=25.1.0",
     "gdal==3.8.4",
     "argon2-cffi>=25.1.0",
+    "ultralytics>=8.4.31",
+    "opencv-python-headless>=4.13.0.92",
 ]

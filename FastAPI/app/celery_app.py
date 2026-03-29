@@ -13,7 +13,7 @@ celery_app = Celery(
     "gravel_road_tiles",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.workers.tile_worker", "app.workers.rut.task", "app.workers.crown.task", "app.workers.corrugation.task"]
+    include=["app.workers.tile_worker", "app.workers.rut.task", "app.workers.crown.task", "app.workers.corrugation.task", "app.workers.dust.task"]
 )
 
 # Celery configuration
@@ -49,6 +49,7 @@ celery_app.conf.update(
         "app.workers.rut_worker.analyze_ruts_task": {"queue": "celery"},
         "app.workers.crown.task.analyze_crown_task": {"queue": "celery"},
         "app.workers.corrugation.task.analyze_corrugation_task": {"queue": "celery"},
+        "app.workers.dust.task.analyze_dust_task": {"queue": "celery"},
     },
 )
 

@@ -367,3 +367,66 @@ class CorrugationAnalysisStatusResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Video Upload Schemas
+class VideoPresignRequest(BaseModel):
+    filename: str
+    file_size: int
+    content_type: str = "video/mp4"
+
+class VideoPresignResponse(BaseModel):
+    presigned_url: str
+    s3_key: str
+    video_id: uuid_lib.UUID
+
+class VideoFileResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    filename: str
+    original_size_bytes: int
+    upload_status: str
+    total_frames: Optional[int] = None
+    fps: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Dust Analysis Schemas
+class DustAnalysisCreate(BaseModel):
+    video_file_id: uuid_lib.UUID
+    polygon_points: List[List[float]]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+
+class DustAnalysisResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    video_file_id: uuid_lib.UUID
+    polygon_points: List[List[float]]
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    total_frames: int
+    truck_frames: int
+    no_truck_frames: int
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class DustAnalysisStatusResponse(BaseModel):
+    id: uuid_lib.UUID
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    total_frames: int
+    truck_frames: int
+    no_truck_frames: int
+
+    class Config:
+        from_attributes = True

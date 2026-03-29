@@ -224,3 +224,58 @@ class CorrugationAnalysisJob(Base):
     completed_at = Column(DateTime(timezone=True))
 
     tiff_file = relationship("TiffFile", back_populates="corrugation_analyses")
+
+
+class VideoFile(Base):
+    __tablename__ = "video_files"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    original_size_bytes = Column(BigInteger, nullable=False)
+    s3_bucket = Column(String(255), nullable=False)
+    s3_key = Column(String(500), nullable=False)
+    s3_url = Column(Text)
+    upload_status = Column(String(50), default="pending")
+    total_frames = Column(Integer)
+    fps = Column(Float)
+    width = Column(Integer)
+    height = Column(Integer)
+    duration_seconds = Column(Float)
+    first_frame_s3_key = Column(String(500))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", backref="video_files")
+    dust_analyses = relationship("DustAnalysisJob", back_populates="video_file", cascade="all, delete-orphan")
+
+
+class DustAnalysisJob(Base):
+    __tablename__ = "dust_analysis_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    video_file_id = Column(UUID(as_uuid=True), ForeignKey("video_files.id", ondelete="CASCADE"), nullable=False)
+
+    # Road polygon (4 points)
+    polygon_points = Column(JSON, nullable=False)
+
+    # Job status
+    status = Column(String(50), default="pending")
+    progress = Column(Integer, default=0)
+    error_message = Column(Text)
+    celery_task_id = Column(String(255))
+
+    # Results
+    results_json = Column(JSON)  # [{frame: 0, truck: false}, ...]
+
+    # Statistics
+    total_frames = Column(Integer, default=0)
+    truck_frames = Column(Integer, default=0)
+    no_truck_frames = Column(Integer, default=0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True))
+
+    video_file = relationship("VideoFile", back_populates="dust_analyses")
