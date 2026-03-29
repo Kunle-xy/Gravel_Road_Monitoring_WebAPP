@@ -19,9 +19,11 @@ def get_yolo_model():
     global _model
     if _model is None:
         from ultralytics import YOLO
+        import torch
         _model = YOLO("yolov8l.pt")
-        _model.to("cuda")
-        logger.info("YOLOv8 model loaded on GPU")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _model.to(device)
+        logger.info(f"YOLOv8 model loaded on {device}")
     return _model
 
 
