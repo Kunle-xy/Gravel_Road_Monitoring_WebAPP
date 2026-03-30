@@ -143,7 +143,7 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
   const showLoading = initializing || (file.tile_status === 'processing' || file.tile_status === 'queued');
 
   return (
-    <li className="flex items-center gap-2 group">
+    <li className="flex items-center gap-1.5">
       <button
         type="button"
         onClick={handleToggle}
@@ -153,23 +153,23 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
         title={checked ? `Hide ${file.filename}` : `Show ${file.filename}`}
       >
         {showLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
         ) : checked ? (
-          <CheckSquare className="h-4 w-4 text-blue-400" />
+          <CheckSquare className="h-3.5 w-3.5 text-blue-400" />
         ) : (
-          <Square className="h-4 w-4 text-gray-400" />
+          <Square className="h-3.5 w-3.5 text-gray-400" />
         )}
       </button>
 
       <div className="flex-1 min-w-0">
-        <div className="truncate font-medium text-sm" title={file.filename}>
+        <div className="truncate font-medium text-[11px]" title={file.filename}>
           {file.filename}
         </div>
-        <div className="text-xs text-slate-400">
+        <div className="text-[10px] text-slate-400">
           <span>{formatFileSize(file.original_size_bytes)}</span>
         </div>
         {error && (
-          <div className="text-xs text-yellow-400 truncate" title={error}>
+          <div className="text-[10px] text-yellow-400 truncate" title={error}>
             {error}
           </div>
         )}
@@ -177,11 +177,11 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
 
       <button
         onClick={() => onDelete(file.id, file.filename)}
-        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-all shrink-0"
+        className="p-0.5 hover:bg-red-500/20 rounded transition-colors shrink-0"
         title="Delete file"
         aria-label={`Delete ${file.filename}`}
       >
-        <Trash2 className="h-3 w-3 text-red-400" />
+        <Trash2 className="h-2.5 w-2.5 text-red-400" />
       </button>
     </li>
   );

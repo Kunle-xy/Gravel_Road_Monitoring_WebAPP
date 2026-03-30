@@ -7,18 +7,18 @@ import { fetchWithAuth, API_ENDPOINTS } from '@/app/lib/api';
 
 function VideoFileItem({ video, onDeleteVideo }: { video: { id: string; filename: string; duration_seconds?: number }; onDeleteVideo: (id: string, name: string) => void }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-700/30 rounded text-[12px] group">
-      <Video size={14} className="text-cyan-400 shrink-0" />
+    <div className="flex items-center gap-1.5 px-1.5 py-1 bg-slate-700/30 rounded text-[10px]">
+      <Video size={12} className="text-cyan-400 shrink-0" />
       <span className="flex-1 truncate text-slate-200">{video.filename}</span>
       {video.duration_seconds && (
-        <span className="text-slate-500 text-[10px] shrink-0">{video.duration_seconds.toFixed(0)}s</span>
+        <span className="text-slate-500 text-[9px] shrink-0">{video.duration_seconds.toFixed(0)}s</span>
       )}
       <button
         onClick={() => onDeleteVideo(video.id, video.filename)}
-        className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-500/20 rounded transition-all"
+        className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors"
         title="Delete video"
       >
-        <Trash2 size={12} className="text-red-400" />
+        <Trash2 size={10} className="text-red-400" />
       </button>
     </div>
   );
@@ -231,7 +231,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                 className="flex-1 bg-white/10 text-sm px-2 py-0.5 rounded border border-white/20 focus:outline-none focus:border-blue-400"
               />
             ) : (
-              <span className="flex-1 text-sm font-medium truncate">
+              <span className="flex-1 text-xs font-medium truncate">
                 {folder.name} ({folder.files.length + (folder.videos?.length || 0)})
               </span>
             )}
@@ -273,7 +273,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                 const demFiles = folder.files.filter(f => f.file_type === 'DEM');
                 return demFiles.length > 0 && (
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">
                       DEM Files ({demFiles.length})
                     </div>
                     <div className="space-y-2">
@@ -290,7 +290,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                 const orthoFiles = folder.files.filter(f => f.file_type === 'ORTHOPHOTO' || f.file_type === 'HILLSHADE');
                 return orthoFiles.length > 0 && (
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">
                       Hillshade / Orthophoto ({orthoFiles.length})
                     </div>
                     <div className="space-y-2">

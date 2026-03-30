@@ -369,15 +369,15 @@ function ProfileWidget() {
         >
           {user ? (
             <>
-              <div className="text-sm font-semibold">
+              <div className="text-xs font-semibold">
                 {user.first_name} {user.last_name}
               </div>
-              <div className="text-xs text-slate-300">{user.email}</div>
+              <div className="text-[10px] text-slate-300">{user.email}</div>
             </>
           ) : (
             <>
-              <div className="text-sm font-semibold">Guest User</div>
-              <div className="text-xs text-slate-300">Not logged in</div>
+              <div className="text-xs font-semibold">Guest User</div>
+              <div className="text-[10px] text-slate-300">Not logged in</div>
             </>
           )}
         </div>
@@ -393,7 +393,7 @@ function ProfileWidget() {
         <Link href="/dashboard/upload">
           <button
             type="button"
-            className={`w-full rounded-lg bg-white/10 px-3 py-2 text-sm hover:bg-white/15 transition-colors flex items-center gap-2 ${
+            className={`w-full rounded-lg bg-white/10 px-2.5 py-1.5 text-xs hover:bg-white/15 transition-colors flex items-center gap-2 ${
               open ? "" : "justify-center"
             }`}
           >
@@ -531,7 +531,7 @@ function ProfileWidget() {
             {/* Folders Section */}
             {folders.length > 0 && (
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-400 mb-3 flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-2 flex items-center justify-between">
                   <span>Projects ({folders.length})</span>
                   <button
                     onClick={() => setSortBy(sortBy === 'name' ? 'fileCount' : 'name')}
@@ -599,7 +599,7 @@ function ProfileWidget() {
         {open && !showCreateFolder && (
           <button
             onClick={() => setShowCreateFolder(true)}
-            className="w-full rounded-lg bg-blue-500/20 px-3 py-2 text-sm hover:bg-blue-500/30 transition-colors flex items-center gap-2 text-blue-300"
+            className="w-full rounded-lg bg-blue-500/20 px-2.5 py-1.5 text-xs hover:bg-blue-500/30 transition-colors flex items-center gap-2 text-blue-300"
           >
             <FolderPlus className="h-4 w-4" />
             <span>New Project</span>
@@ -650,7 +650,7 @@ function ProfileWidget() {
         <button
           type="button"
           onClick={logout}
-          className={`w-full rounded-lg bg-red-600/40 px-3 py-2.5 text-sm font-semibold hover:bg-red-600/60 transition-all flex items-center gap-2 shadow-lg ${
+          className={`w-full rounded-lg bg-red-600/40 px-2.5 py-2 text-xs font-semibold hover:bg-red-600/60 transition-all flex items-center gap-2 shadow-lg ${
             open ? "" : "justify-center px-2"
           }`}
           title="Logout"
