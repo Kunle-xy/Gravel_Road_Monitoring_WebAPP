@@ -253,7 +253,7 @@ class PotholeAnalysisJob(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))
 
-    tiff_file = relationship("TiffFile", backref="pothole_analyses")
+    tiff_file = relationship("TiffFile", passive_deletes=True)
 
 
 class VideoFile(Base):
