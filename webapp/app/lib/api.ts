@@ -147,8 +147,9 @@ export const API_ENDPOINTS = {
     VIDEO_COMPLETE: (videoId: string) => `/dust/video/${videoId}/complete`,
     VIDEO_DELETE: (videoId: string) => `/dust/video/${videoId}`,
     FIRST_FRAME: (videoId: string) => `/dust/video/${videoId}/first-frame`,
-    STREAM: (videoId: string, polygon: number[][], speed: number = 1.0) =>
-      `/dust/stream/${videoId}?polygon=${encodeURIComponent(JSON.stringify(polygon))}&speed=${speed}`,
+    MODELS: '/dust/models',
+    STREAM: (videoId: string, polygon: number[][], speed: number = 1.0, model: string = "yolov8s") =>
+      `/dust/stream/${videoId}?polygon=${encodeURIComponent(JSON.stringify(polygon))}&speed=${speed}&model=${model}`,
     BASE: '/dust',
     GET: (jobId: string) => `/dust/${jobId}`,
     STATUS: (jobId: string) => `/dust/${jobId}/status`,

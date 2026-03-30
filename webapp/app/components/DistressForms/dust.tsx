@@ -37,6 +37,15 @@ export default function DustForm() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1.0);
+  const [selectedModel, setSelectedModel] = useState("yolov8s");
+
+  const models = [
+    { id: "yolov8n", label: "YOLOv8 Nano", desc: "Fastest" },
+    { id: "yolov8s", label: "YOLOv8 Small", desc: "Fast, good accuracy" },
+    { id: "yolov8m", label: "YOLOv8 Medium", desc: "Balanced" },
+    { id: "yolov8l", label: "YOLOv8 Large", desc: "High accuracy" },
+    { id: "yolo11l", label: "YOLO11 Large", desc: "Latest, best accuracy" },
+  ];
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
@@ -143,21 +152,29 @@ export default function DustForm() {
   };
 
   // --- Stream ---
-  const startStream = (playSpeed?: number) => {
+  const startStream = (playSpeed?: number, modelOverride?: string) => {
     if (!videoId || polygonPoints.length !== 4) return;
     const s = playSpeed ?? speed;
-    const url = `${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, s)}`;
+    const m = modelOverride ?? selectedModel;
+    const url = `${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, s, m)}`;
     setStreamUrl(url);
     setIsStreaming(true);
-    if (!playSpeed) showToast("Live detection started!", "info");
+    if (!playSpeed && !modelOverride) showToast("Live detection started!", "info");
   };
 
   const changeSpeed = (newSpeed: number) => {
     setSpeed(newSpeed);
     if (isStreaming && videoId && polygonPoints.length === 4) {
-      // Restart stream with new speed
       setStreamUrl(null);
       setTimeout(() => startStream(newSpeed), 100);
+    }
+  };
+
+  const changeModel = (newModel: string) => {
+    setSelectedModel(newModel);
+    if (isStreaming && videoId && polygonPoints.length === 4) {
+      setStreamUrl(null);
+      setTimeout(() => startStream(undefined, newModel), 100);
     }
   };
 
@@ -215,6 +232,27 @@ export default function DustForm() {
               {uploading && <div className="w-full bg-slate-700 rounded-full h-1.5 mt-1"><div className="bg-blue-500 h-1.5 transition-all" style={{ width: `${uploadProgress}%` }} /></div>}
             </div>
 
+            {/* Model Selection */}
+            {videoId && (
+              <div className="border-t border-slate-700 pt-3">
+                <label className="font-semibold text-[12px] text-slate-300 mb-1.5 block">Detection Model</label>
+                <div className="space-y-1">
+                  {models.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedModel(m.id)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[12px] transition-colors ${
+                        selectedModel === m.id ? "bg-cyan-900/50 border border-cyan-700/60 text-cyan-200" : "bg-slate-700/40 hover:bg-slate-700 text-slate-300"
+                      }`}
+                    >
+                      <span className="font-medium">{m.label}</span>
+                      <span className="text-[10px] text-slate-400">{m.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {firstFrameUrl && (
               <div className="space-y-2 border-t border-slate-700 pt-3">
                 <div className="flex items-center justify-between">
@@ -252,20 +290,37 @@ export default function DustForm() {
               </div>
             </div>
 
-            {/* Speed Control */}
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400 shrink-0">Speed:</span>
-              {[0.25, 0.5, 1, 2, 4].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => changeSpeed(s)}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                >
-                  {s}x
-                </button>
-              ))}
+            {/* Model + Speed Controls */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-slate-400 shrink-0">Model:</span>
+                {models.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => changeModel(m.id)}
+                    className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                      selectedModel === m.id ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                    title={m.desc}
+                  >
+                    {m.label.replace("YOLO", "").trim()}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 shrink-0">Speed:</span>
+                {[0.25, 0.5, 1, 2, 4].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => changeSpeed(s)}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                      speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
             </div>
 
             <button onClick={stopStream} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 text-white rounded-lg text-[13px] font-medium hover:bg-slate-600 transition-colors">

@@ -1,5 +1,6 @@
 """
-YOLOv8 object detection within a bounded road polygon.
+YOLO object detection within a bounded road polygon.
+Supports multiple model variants.
 """
 
 import cv2 as cv
@@ -8,27 +9,38 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_model = None
+# Cache loaded models by name
+_models: dict = {}
 
-def get_yolo_model():
-    """Load YOLOv8 model once, reuse across frames."""
-    global _model
-    if _model is None:
+AVAILABLE_MODELS = {
+    "yolov8n": {"file": "yolov8n.pt", "label": "YOLOv8 Nano", "desc": "Fastest, lower accuracy"},
+    "yolov8s": {"file": "yolov8s.pt", "label": "YOLOv8 Small", "desc": "Fast, good accuracy"},
+    "yolov8m": {"file": "yolov8m.pt", "label": "YOLOv8 Medium", "desc": "Balanced speed/accuracy"},
+    "yolov8l": {"file": "yolov8l.pt", "label": "YOLOv8 Large", "desc": "Slower, high accuracy"},
+    "yolo11l": {"file": "yolo11l.pt", "label": "YOLO11 Large", "desc": "Latest, best accuracy"},
+}
+
+
+def get_yolo_model(model_name: str = "yolov8s"):
+    """Load a YOLO model by name, cache for reuse."""
+    global _models
+    if model_name not in _models:
         from ultralytics import YOLO
         import torch
-        _model = YOLO("yolov8s.pt")  # Small model — fast inference
+        model_info = AVAILABLE_MODELS.get(model_name, AVAILABLE_MODELS["yolov8s"])
+        _models[model_name] = YOLO(model_info["file"])
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        _model.to(device)
-        logger.info(f"YOLOv8s model loaded on {device}")
-    return _model
+        _models[model_name].to(device)
+        logger.info(f"{model_info['label']} loaded on {device}")
+    return _models[model_name]
 
 
-def detect_and_annotate(frame: np.ndarray, polygon: np.ndarray) -> np.ndarray:
+def detect_and_annotate(frame: np.ndarray, polygon: np.ndarray, model_name: str = "yolov8s") -> np.ndarray:
     """
     Run YOLOv8 on a frame, draw bounding boxes for objects inside the polygon.
     Returns the annotated frame.
     """
-    model = get_yolo_model()
+    model = get_yolo_model(model_name)
     results = model.predict(source=frame, conf=0.25, imgsz=640, verbose=False)
 
     # Draw polygon overlay (cyan)
