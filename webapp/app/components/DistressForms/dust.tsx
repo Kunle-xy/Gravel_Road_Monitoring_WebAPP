@@ -52,7 +52,7 @@ export default function DustForm() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
-  const sel = "text-[9px] bg-slate-700 border border-slate-600 rounded px-1 py-0.5 text-slate-100 focus:outline-none focus:border-cyan-400";
+  const sel = "text-[10px] bg-slate-700 border border-slate-600 rounded px-1.5 py-1 text-slate-100 focus:outline-none focus:border-cyan-400";
 
   const showToast = (msg: string, type: Toast["type"] = "error") => {
     const id = Date.now();
@@ -155,8 +155,8 @@ export default function DustForm() {
   return (
     <>
       <ToastContainer toasts={toasts} />
-      <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-2 text-[9px] text-slate-100 ring-1 ring-slate-700/50">
-        <h2 className="text-[10px] font-bold border-b border-slate-700 pb-1 mb-1.5 text-slate-200 text-center">
+      <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[10px] text-slate-100 ring-1 ring-slate-700/50">
+        <h2 className="text-[12px] font-bold border-b border-slate-700 pb-1.5 mb-2 text-slate-200 text-center">
           Object Detection (YOLO)
         </h2>
 
@@ -167,7 +167,7 @@ export default function DustForm() {
             <div className="flex gap-1.5 items-end">
               {/* Video dropdown */}
               <div className="flex-1">
-                <label className="font-medium text-slate-500 text-[8px] block mb-0.5">Video</label>
+                <label className="font-semibold text-slate-400 block mb-0.5">Video</label>
                 {loadingVideos ? <span className="text-slate-500">Loading...</span> : (
                   <select
                     value={videoId || ""}
@@ -183,7 +183,7 @@ export default function DustForm() {
               </div>
               {/* Model dropdown */}
               <div>
-                <label className="font-medium text-slate-500 text-[8px] block mb-0.5">Model</label>
+                <label className="font-semibold text-slate-400 block mb-0.5">Model</label>
                 <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className={sel}>
                   {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                 </select>
@@ -194,7 +194,7 @@ export default function DustForm() {
             <div className="flex gap-1.5 items-end">
               {folders.length > 0 && (
                 <div>
-                  <label className="font-medium text-slate-500 text-[8px] block mb-0.5">Project</label>
+                  <label className="font-semibold text-slate-400 block mb-0.5">Project</label>
                   <select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className={sel}>
                     <option value="">None</option>
                     {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -202,7 +202,7 @@ export default function DustForm() {
                 </div>
               )}
               <div className="flex-1">
-                <label className="font-medium text-slate-500 text-[8px] block mb-0.5">Upload new</label>
+                <label className="font-semibold text-slate-400 block mb-0.5">Upload new</label>
                 <div className="flex gap-1">
                   <label className="flex-1 flex items-center gap-1 px-2 py-1 bg-slate-700 border border-slate-600 border-dashed rounded cursor-pointer hover:bg-slate-600">
                     <Upload size={10} /><span className="truncate">{videoFile ? videoFile.name : ".mp4"}</span>
@@ -220,17 +220,17 @@ export default function DustForm() {
             {firstFrameUrl && (
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-slate-500 text-[8px]">{isDrawing ? `Region (${polygonPoints.length}/4)` : "Region set"}</span>
+                  <span className="font-semibold text-slate-400">{isDrawing ? `Region (${polygonPoints.length}/4)` : "Region set"}</span>
                   {polygonPoints.length > 0 && <button onClick={() => { setPolygonPoints([]); setIsDrawing(true); }} className="text-red-400 hover:text-red-300">Reset</button>}
                 </div>
-                <canvas ref={canvasRef} onClick={handleCanvasClick} className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : ""}`} style={{ maxHeight: "240px", objectFit: "contain" }} />
+                <canvas ref={canvasRef} onClick={handleCanvasClick} className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : ""}`} style={{ maxHeight: "280px", objectFit: "contain" }} />
               </div>
             )}
 
             {/* Start */}
             {videoId && polygonPoints.length === 4 && (
-              <button onClick={() => startStream()} className="w-full flex items-center justify-center gap-1 px-2 py-1.5 bg-red-700 text-white rounded text-[9px] font-bold hover:bg-red-800 shadow">
-                <Play size={10} /> Run Detection
+              <button onClick={() => startStream()} className="w-full flex items-center justify-center gap-1.5 px-2 py-2 bg-red-700 text-white rounded-lg text-[11px] font-bold hover:bg-red-800 shadow-lg">
+                <Play size={14} /> Run Detection
               </button>
             )}
           </div>
@@ -243,7 +243,7 @@ export default function DustForm() {
               {streamUrl && (
                 <img src={streamUrl} alt="Detection" className="w-full rounded border border-slate-600" style={{ maxHeight: "55vh", objectFit: "contain", backgroundColor: "#000" }} />
               )}
-              <div className="absolute top-1 left-1 flex items-center gap-1 bg-red-600/90 px-1 py-0.5 rounded text-[8px] font-bold text-white">
+              <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-red-600/90 px-1.5 py-0.5 rounded text-[9px] font-bold text-white">
                 <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /> LIVE
               </div>
             </div>
@@ -255,13 +255,13 @@ export default function DustForm() {
               </select>
               <div className="flex items-center gap-1">
                 {SPEEDS.map((s) => (
-                  <button key={s} onClick={() => changeSpeed(s)} className={`px-1 py-0.5 rounded text-[8px] font-medium ${speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>
+                  <button key={s} onClick={() => changeSpeed(s)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>
                     {s}x
                   </button>
                 ))}
               </div>
-              <button onClick={stopStream} className="ml-auto flex items-center gap-1 px-1.5 py-0.5 bg-slate-700 text-white rounded text-[8px] hover:bg-slate-600">
-                <StopCircle size={8} /> Stop
+              <button onClick={stopStream} className="ml-auto flex items-center gap-1 px-2 py-1 bg-slate-700 text-white rounded text-[10px] hover:bg-slate-600">
+                <StopCircle size={10} /> Stop
               </button>
             </div>
           </div>
