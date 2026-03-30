@@ -158,10 +158,11 @@ def get_first_frame(
 
 # --- Live MJPEG Stream with YOLOv8 ---
 
-def _generate_mjpeg(video_path: str, polygon_points: list) -> Generator[bytes, None, None]:
+def _generate_mjpeg(video_path: str, polygon_points: list, speed: float = 1.0) -> Generator[bytes, None, None]:
     """
     Generator that reads video frame-by-frame, runs YOLOv8 detection,
     and yields MJPEG frames for streaming.
+    Speed controls playback rate: 0.5 = half speed, 2.0 = double speed.
     """
     from app.workers.dust.detection import detect_and_annotate
 
@@ -170,7 +171,7 @@ def _generate_mjpeg(video_path: str, polygon_points: list) -> Generator[bytes, N
         return
 
     video_fps = cap.get(cv.CAP_PROP_FPS) or 30.0
-    frame_delay = 1.0 / video_fps
+    frame_delay = 1.0 / (video_fps * max(speed, 0.1))
     polygon = np.array(polygon_points, dtype=np.int32)
 
     try:
@@ -181,14 +182,11 @@ def _generate_mjpeg(video_path: str, polygon_points: list) -> Generator[bytes, N
             if not ret:
                 break
 
-            # Run YOLOv8 + draw annotations
             annotated = detect_and_annotate(frame, polygon)
 
-            # Encode as JPEG
             _, buffer = cv.imencode(".jpg", annotated, [cv.IMWRITE_JPEG_QUALITY, 80])
             frame_bytes = buffer.tobytes()
 
-            # Yield as MJPEG boundary
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
@@ -196,7 +194,6 @@ def _generate_mjpeg(video_path: str, polygon_points: list) -> Generator[bytes, N
                 b"\r\n" + frame_bytes + b"\r\n"
             )
 
-            # Pace to match original video fps
             elapsed = time.time() - t_start
             if elapsed < frame_delay:
                 time.sleep(frame_delay - elapsed)
@@ -207,14 +204,12 @@ def _generate_mjpeg(video_path: str, polygon_points: list) -> Generator[bytes, N
 @router.get("/stream/{video_id}")
 def stream_detection(
     video_id: uuid.UUID,
-    polygon: str = Query(..., description="Polygon points as JSON: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]"),
+    polygon: str = Query(..., description="Polygon points as JSON"),
+    speed: float = Query(1.0, ge=0.25, le=4.0, description="Playback speed multiplier"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Live MJPEG stream — processes video with YOLOv8 and streams annotated frames.
-    Display in browser with: <img src="/dust/stream/{id}?polygon=[[...]]" />
-    """
+    """Live MJPEG stream with YOLOv8 detection. Speed: 0.25x to 4x."""
     import json
 
     video = db.query(VideoFile).filter(
@@ -230,14 +225,12 @@ def stream_detection(
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid polygon: {e}")
 
-    # Download video to temp file
     tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
     s3_client.download_file(video.s3_bucket, video.s3_key, tmp.name)
 
-    # Note: tmp file is cleaned up when the generator finishes or client disconnects
     def stream_and_cleanup():
         try:
-            yield from _generate_mjpeg(tmp.name, polygon_points)
+            yield from _generate_mjpeg(tmp.name, polygon_points, speed)
         finally:
             try:
                 os.unlink(tmp.name)

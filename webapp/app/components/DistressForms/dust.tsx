@@ -36,6 +36,7 @@ export default function DustForm() {
   const [isDrawing, setIsDrawing] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [speed, setSpeed] = useState(1.0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
@@ -142,13 +143,22 @@ export default function DustForm() {
   };
 
   // --- Stream ---
-  const startStream = () => {
+  const startStream = (playSpeed?: number) => {
     if (!videoId || polygonPoints.length !== 4) return;
-    // Build the MJPEG stream URL through the API proxy
-    const url = `${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints)}`;
+    const s = playSpeed ?? speed;
+    const url = `${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, s)}`;
     setStreamUrl(url);
     setIsStreaming(true);
-    showToast("Live detection started!", "info");
+    if (!playSpeed) showToast("Live detection started!", "info");
+  };
+
+  const changeSpeed = (newSpeed: number) => {
+    setSpeed(newSpeed);
+    if (isStreaming && videoId && polygonPoints.length === 4) {
+      // Restart stream with new speed
+      setStreamUrl(null);
+      setTimeout(() => startStream(newSpeed), 100);
+    }
   };
 
   const stopStream = () => {
@@ -240,6 +250,22 @@ export default function DustForm() {
                 <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                 LIVE DETECTION
               </div>
+            </div>
+
+            {/* Speed Control */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 shrink-0">Speed:</span>
+              {[0.25, 0.5, 1, 2, 4].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => changeSpeed(s)}
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                    speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                  }`}
+                >
+                  {s}x
+                </button>
+              ))}
             </div>
 
             <button onClick={stopStream} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 text-white rounded-lg text-[13px] font-medium hover:bg-slate-600 transition-colors">

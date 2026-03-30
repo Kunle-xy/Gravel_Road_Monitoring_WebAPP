@@ -5,6 +5,25 @@ import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Trash2, Edit2, Vid
 import TiffFileItem from '../TiffFiles/TiffFileItem';
 import { fetchWithAuth, API_ENDPOINTS } from '@/app/lib/api';
 
+function VideoFileItem({ video, onDeleteVideo }: { video: { id: string; filename: string; duration_seconds?: number }; onDeleteVideo: (id: string, name: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-700/30 rounded text-[12px] group">
+      <Video size={14} className="text-cyan-400 shrink-0" />
+      <span className="flex-1 truncate text-slate-200">{video.filename}</span>
+      {video.duration_seconds && (
+        <span className="text-slate-500 text-[10px] shrink-0">{video.duration_seconds.toFixed(0)}s</span>
+      )}
+      <button
+        onClick={() => onDeleteVideo(video.id, video.filename)}
+        className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-500/20 rounded transition-all"
+        title="Delete video"
+      >
+        <Trash2 size={12} className="text-red-400" />
+      </button>
+    </div>
+  );
+}
+
 interface TiffFile {
   id: string;
   filename: string;
@@ -43,6 +62,15 @@ interface FolderTreeItemProps {
 
 export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(folder.is_expanded);
+  const handleDeleteVideo = async (videoId: string, filename: string) => {
+    if (!confirm(`Delete video "${filename}"?`)) return;
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_DELETE(videoId), { method: 'DELETE' });
+      if (res.ok || res.status === 204) onRefresh();
+      else alert('Failed to delete video');
+    } catch { alert('Failed to delete video'); }
+  };
+
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState(folder.name);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -282,18 +310,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                   </div>
                   <div className="space-y-2">
                     {folder.videos.map((video) => (
-                      <div
-                        key={video.id}
-                        className="flex items-center gap-2 px-2 py-1.5 bg-slate-700/30 rounded text-[12px]"
-                      >
-                        <Video size={14} className="text-cyan-400 shrink-0" />
-                        <span className="flex-1 truncate text-slate-200">{video.filename}</span>
-                        {video.duration_seconds && (
-                          <span className="text-slate-500 text-[10px] shrink-0">
-                            {video.duration_seconds.toFixed(0)}s
-                          </span>
-                        )}
-                      </div>
+                      <VideoFileItem key={video.id} video={video} onDeleteVideo={handleDeleteVideo} />
                     ))}
                   </div>
                 </div>
