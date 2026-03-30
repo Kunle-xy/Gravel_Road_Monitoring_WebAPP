@@ -45,7 +45,7 @@ function DistressWidget() {
           open ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <ul className="mt-2 flex flex-row flex-wrap items-center gap-2 overflow-x-auto py-1">
+        <ul className="mt-0.5 flex flex-row flex-wrap items-center gap-1.5 overflow-x-auto py-0.5">
           {Distress.map((type, index) => (
             <li key={index}>
               <button
