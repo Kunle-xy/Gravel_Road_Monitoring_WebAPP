@@ -125,9 +125,28 @@ export default function DustForm() {
       });
     }
     if (polygonPoints.length < 4 && isDrawing) {
-      const labels = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"];
-      ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(8, 8, 200, 26);
-      ctx.fillStyle = "#00ffff"; ctx.font = "bold 14px sans-serif"; ctx.fillText(`Click ${labels[polygonPoints.length]}`, 14, 27);
+      const labels = [
+        "Click TOP-LEFT corner of road",
+        "Click TOP-RIGHT corner of road",
+        "Click BOTTOM-RIGHT corner of road",
+        "Click BOTTOM-LEFT corner of road",
+      ];
+      const step = `Step ${polygonPoints.length + 1}/4`;
+      const fontSize = Math.max(16, Math.round(canvas.width / 40));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      const text = labels[polygonPoints.length];
+      const tw = ctx.measureText(text).width;
+      const padding = 12;
+      const boxH = fontSize + padding * 2;
+      // Background
+      ctx.fillStyle = "rgba(0,0,0,0.8)";
+      ctx.fillRect(0, 0, tw + padding * 3 + ctx.measureText(step).width + 20, boxH);
+      // Step badge
+      ctx.fillStyle = "#f97316";
+      ctx.fillText(step, padding, fontSize + padding - 2);
+      // Instruction text
+      ctx.fillStyle = "#00ffff";
+      ctx.fillText(text, padding + ctx.measureText(step).width + 12, fontSize + padding - 2);
     }
   }, [polygonPoints, isDrawing]);
   useEffect(() => { if (!firstFrameUrl) return; const img = new Image(); img.onload = () => { imageRef.current = img; drawCanvas(); }; img.src = firstFrameUrl; }, [firstFrameUrl, drawCanvas]);
