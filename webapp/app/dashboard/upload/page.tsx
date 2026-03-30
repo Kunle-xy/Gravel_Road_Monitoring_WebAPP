@@ -346,7 +346,7 @@ export default function UploadPage() {
                 </div>
               ) : (
                 <select
-                  value={selectedFolderId}
+                  value={selectedFolderId ?? ""}
                   onChange={(e) => setSelectedFolderId(e.target.value)}
                   className="w-full text-sm bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
                 >
