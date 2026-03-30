@@ -273,8 +273,8 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                 const demFiles = folder.files.filter(f => f.file_type === 'DEM');
                 return demFiles.length > 0 && (
                   <div>
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">
-                      DEM Files ({demFiles.length})
+                    <div className="text-[10px] text-slate-400 mb-1 font-semibold">
+                      dem files ({demFiles.length})
                     </div>
                     <div className="space-y-2">
                       {demFiles.map((file) => (
@@ -290,8 +290,8 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
                 const orthoFiles = folder.files.filter(f => f.file_type === 'ORTHOPHOTO' || f.file_type === 'HILLSHADE');
                 return orthoFiles.length > 0 && (
                   <div>
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">
-                      Hillshade / Orthophoto ({orthoFiles.length})
+                    <div className="text-[10px] text-slate-400 mb-1 font-semibold">
+                      hillshade / orthophoto ({orthoFiles.length})
                     </div>
                     <div className="space-y-2">
                       {orthoFiles.map((file) => (
@@ -306,7 +306,7 @@ export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTr
               {folder.videos && folder.videos.length > 0 && (
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-400 mb-2 font-semibold">
-                    Videos ({folder.videos.length})
+                    videos ({folder.videos.length})
                   </div>
                   <div className="space-y-2">
                     {folder.videos.map((video) => (
