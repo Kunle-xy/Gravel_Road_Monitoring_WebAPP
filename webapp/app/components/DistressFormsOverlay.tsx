@@ -19,11 +19,8 @@ const DistressFormsOverlay = () => {
   if (activeDistress === 'Dust') {
     return (
       <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-auto">
-        {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/40"
-          onClick={() => setActiveDistress(null)}
-        />
+        {/* Backdrop — no click-to-close, use X button only */}
+        <div className="absolute inset-0 bg-black/40" />
         {/* Centered modal */}
         <div className="relative bg-white outline rounded-lg p-5 w-[44rem] max-w-[95vw] max-h-[90vh] overflow-y-auto shadow-2xl">
           <button
