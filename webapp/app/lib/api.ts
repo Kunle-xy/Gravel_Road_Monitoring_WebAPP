@@ -141,6 +141,12 @@ export const API_ENDPOINTS = {
     DELETE: (jobId: string) => `/corrugation/${jobId}`,
     COMPLETED: '/corrugation/completed',
   },
+  POTHOLE: {
+    BASE: '/pothole',
+    GET: (jobId: string) => `/pothole/${jobId}`,
+    STATUS: (jobId: string) => `/pothole/${jobId}/status`,
+    DELETE: (jobId: string) => `/pothole/${jobId}`,
+  },
   DUST: {
     VIDEOS: '/dust/videos',
     VIDEO_PRESIGN: '/dust/video/presign',

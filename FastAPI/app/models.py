@@ -226,6 +226,36 @@ class CorrugationAnalysisJob(Base):
     tiff_file = relationship("TiffFile", back_populates="corrugation_analyses")
 
 
+class PotholeAnalysisJob(Base):
+    __tablename__ = "pothole_analysis_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tiff_file_id = Column(UUID(as_uuid=True), ForeignKey("tiff_files.id", ondelete="CASCADE"), nullable=False)
+
+    polygon_geojson = Column(JSON, nullable=False)
+
+    status = Column(String(50), default="pending")
+    progress = Column(Integer, default=0)
+    error_message = Column(Text)
+    celery_task_id = Column(String(255))
+
+    results_json = Column(JSON)
+    html_report_s3_key = Column(String(500))
+    html_report_url = Column(Text)
+
+    depth_inches = Column(Float, default=0.0)
+    width_inches = Column(Float, default=0.0)
+    width_feet = Column(Float, default=0.0)
+    severity = Column(String(50))
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True))
+
+    tiff_file = relationship("TiffFile", backref="pothole_analyses")
+
+
 class VideoFile(Base):
     __tablename__ = "video_files"
 

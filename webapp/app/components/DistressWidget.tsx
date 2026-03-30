@@ -2,13 +2,13 @@
 import React, { memo } from "react";
 import { useDistress } from "../contexts/DistressContext";
 
-const Distress: Array<'Rut' | 'Corrugation' | 'Crown' | 'Dust' | 'Loose Aggregate' | 'Potholes' | 'Drainage'> = [
+const Distress: Array<'Rut' | 'Corrugation' | 'Crown' | 'Dust' | 'Potholes' | 'Loose Aggregate' | 'Drainage'> = [
   "Rut",
   "Corrugation",
   "Crown",
   "Dust",
-  "Loose Aggregate",
   "Potholes",
+  "Loose Aggregate",
   "Drainage"
 ];
 

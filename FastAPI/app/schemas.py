@@ -387,6 +387,45 @@ class CorrugationAnalysisStatusResponse(BaseModel):
         from_attributes = True
 
 
+# Pothole Analysis Schemas
+class PotholeAnalysisCreate(BaseModel):
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+
+class PotholeAnalysisResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    tiff_file_id: uuid_lib.UUID
+    polygon_geojson: Dict[str, Any]
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    html_report_url: Optional[str] = None
+    depth_inches: float
+    width_inches: float
+    width_feet: float
+    severity: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class PotholeAnalysisStatusResponse(BaseModel):
+    id: uuid_lib.UUID
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    html_report_url: Optional[str] = None
+    depth_inches: float
+    width_inches: float
+    width_feet: float
+    severity: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 # Video Upload Schemas
 class VideoPresignRequest(BaseModel):
     filename: str
