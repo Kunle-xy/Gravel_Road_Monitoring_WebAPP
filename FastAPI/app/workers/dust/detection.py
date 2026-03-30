@@ -17,7 +17,8 @@ AVAILABLE_MODELS = {
     "yolov8": {"file": "yolov8l.pt", "label": "YOLOv8", "desc": "Fast and accurate"},
     "yolov9": {"file": "yolov9e.pt", "label": "YOLOv9", "desc": "Enhanced feature extraction"},
     "yolov10": {"file": "yolov10l.pt", "label": "YOLOv10", "desc": "NMS-free, efficient"},
-    "yolo11": {"file": "yolo11l.pt", "label": "YOLO11", "desc": "Latest, best accuracy"},
+    "yolo11": {"file": "yolo11l.pt", "label": "YOLO11", "desc": "High accuracy"},
+    "yolo26": {"file": "yolo26l.pt", "label": "YOLO26", "desc": "Latest, edge-optimized"},
 }
 
 

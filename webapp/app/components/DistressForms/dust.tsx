@@ -37,14 +37,15 @@ export default function DustForm() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1.0);
-  const [selectedModel, setSelectedModel] = useState("yolov8");
+  const [selectedModel, setSelectedModel] = useState("yolo26");
 
   const models = [
     { id: "yolov5", label: "YOLOv5", desc: "Classic, proven" },
     { id: "yolov8", label: "YOLOv8", desc: "Fast & accurate" },
     { id: "yolov9", label: "YOLOv9", desc: "Enhanced features" },
     { id: "yolov10", label: "YOLOv10", desc: "NMS-free" },
-    { id: "yolo11", label: "YOLO11", desc: "Latest, best" },
+    { id: "yolo11", label: "YOLO11", desc: "High accuracy" },
+    { id: "yolo26", label: "YOLO26", desc: "Latest, edge-optimized" },
   ];
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
