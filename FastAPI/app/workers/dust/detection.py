@@ -13,21 +13,21 @@ logger = logging.getLogger(__name__)
 _models: dict = {}
 
 AVAILABLE_MODELS = {
-    "yolov8n": {"file": "yolov8n.pt", "label": "YOLOv8 Nano", "desc": "Fastest, lower accuracy"},
-    "yolov8s": {"file": "yolov8s.pt", "label": "YOLOv8 Small", "desc": "Fast, good accuracy"},
-    "yolov8m": {"file": "yolov8m.pt", "label": "YOLOv8 Medium", "desc": "Balanced speed/accuracy"},
-    "yolov8l": {"file": "yolov8l.pt", "label": "YOLOv8 Large", "desc": "Slower, high accuracy"},
-    "yolo11l": {"file": "yolo11l.pt", "label": "YOLO11 Large", "desc": "Latest, best accuracy"},
+    "yolov5": {"file": "yolov5lu.pt", "label": "YOLOv5", "desc": "Classic, proven reliability"},
+    "yolov8": {"file": "yolov8l.pt", "label": "YOLOv8", "desc": "Fast and accurate"},
+    "yolov9": {"file": "yolov9e.pt", "label": "YOLOv9", "desc": "Enhanced feature extraction"},
+    "yolov10": {"file": "yolov10l.pt", "label": "YOLOv10", "desc": "NMS-free, efficient"},
+    "yolo11": {"file": "yolo11l.pt", "label": "YOLO11", "desc": "Latest, best accuracy"},
 }
 
 
-def get_yolo_model(model_name: str = "yolov8s"):
+def get_yolo_model(model_name: str = "yolov8"):
     """Load a YOLO model by name, cache for reuse."""
     global _models
     if model_name not in _models:
         from ultralytics import YOLO
         import torch
-        model_info = AVAILABLE_MODELS.get(model_name, AVAILABLE_MODELS["yolov8s"])
+        model_info = AVAILABLE_MODELS.get(model_name, AVAILABLE_MODELS["yolov8"])
         _models[model_name] = YOLO(model_info["file"])
         device = "cuda" if torch.cuda.is_available() else "cpu"
         _models[model_name].to(device)
@@ -35,7 +35,7 @@ def get_yolo_model(model_name: str = "yolov8s"):
     return _models[model_name]
 
 
-def detect_and_annotate(frame: np.ndarray, polygon: np.ndarray, model_name: str = "yolov8s") -> np.ndarray:
+def detect_and_annotate(frame: np.ndarray, polygon: np.ndarray, model_name: str = "yolov8") -> np.ndarray:
     """
     Run YOLOv8 on a frame, draw bounding boxes for objects inside the polygon.
     Returns the annotated frame.

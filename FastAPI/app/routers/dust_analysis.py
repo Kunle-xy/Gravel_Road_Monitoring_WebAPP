@@ -170,7 +170,7 @@ def list_models():
 
 # --- Live MJPEG Stream ---
 
-def _generate_mjpeg(video_path: str, polygon_points: list, speed: float = 1.0, model_name: str = "yolov8s") -> Generator[bytes, None, None]:
+def _generate_mjpeg(video_path: str, polygon_points: list, speed: float = 1.0, model_name: str = "yolov8") -> Generator[bytes, None, None]:
     """
     Generator that reads video frame-by-frame, runs YOLO detection,
     and yields MJPEG frames for streaming.
@@ -217,7 +217,7 @@ def stream_detection(
     video_id: uuid.UUID,
     polygon: str = Query(..., description="Polygon points as JSON"),
     speed: float = Query(1.0, ge=0.25, le=4.0, description="Playback speed multiplier"),
-    model: str = Query("yolov8s", description="YOLO model variant"),
+    model: str = Query("yolov8", description="YOLO model variant"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

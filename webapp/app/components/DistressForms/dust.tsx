@@ -37,14 +37,14 @@ export default function DustForm() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1.0);
-  const [selectedModel, setSelectedModel] = useState("yolov8s");
+  const [selectedModel, setSelectedModel] = useState("yolov8");
 
   const models = [
-    { id: "yolov8n", label: "YOLOv8 Nano", desc: "Fastest" },
-    { id: "yolov8s", label: "YOLOv8 Small", desc: "Fast, good accuracy" },
-    { id: "yolov8m", label: "YOLOv8 Medium", desc: "Balanced" },
-    { id: "yolov8l", label: "YOLOv8 Large", desc: "High accuracy" },
-    { id: "yolo11l", label: "YOLO11 Large", desc: "Latest, best accuracy" },
+    { id: "yolov5", label: "YOLOv5", desc: "Classic, proven" },
+    { id: "yolov8", label: "YOLOv8", desc: "Fast & accurate" },
+    { id: "yolov9", label: "YOLOv9", desc: "Enhanced features" },
+    { id: "yolov10", label: "YOLOv10", desc: "NMS-free" },
+    { id: "yolo11", label: "YOLO11", desc: "Latest, best" },
   ];
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -303,7 +303,7 @@ export default function DustForm() {
                     }`}
                     title={m.desc}
                   >
-                    {m.label.replace("YOLO", "").trim()}
+                    {m.label}
                   </button>
                 ))}
               </div>
