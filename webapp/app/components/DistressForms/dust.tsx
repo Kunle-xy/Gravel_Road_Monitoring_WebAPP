@@ -17,8 +17,6 @@ const MODELS = [
   { id: "yolo26", label: "YOLO26" },
 ];
 
-const SPEEDS = [0.25, 0.5, 1, 2, 4];
-
 function ToastContainer({ toasts }: { toasts: Toast[] }) {
   if (toasts.length === 0) return null;
   return (
@@ -47,7 +45,6 @@ export default function DustForm() {
   const [isDrawing, setIsDrawing] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [speed, setSpeed] = useState(1.0);
   const [selectedModel, setSelectedModel] = useState("yolo26");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -143,13 +140,12 @@ export default function DustForm() {
   };
 
   // Stream
-  const startStream = (s?: number, m?: string) => {
+  const startStream = (m?: string) => {
     if (!videoId || polygonPoints.length !== 4) return;
-    setStreamUrl(`${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, s ?? speed, m ?? selectedModel)}`);
+    setStreamUrl(`${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, 1.0, m ?? selectedModel)}`);
     setIsStreaming(true);
   };
-  const changeSpeed = (s: number) => { setSpeed(s); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(s), 50); } };
-  const changeModel = (m: string) => { setSelectedModel(m); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(undefined, m), 50); } };
+  const changeModel = (m: string) => { setSelectedModel(m); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(m), 50); } };
   const stopStream = () => { setStreamUrl(null); setIsStreaming(false); };
 
   return (
@@ -249,17 +245,10 @@ export default function DustForm() {
             </div>
 
             {/* Controls row */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <select value={selectedModel} onChange={(e) => changeModel(e.target.value)} className={sel}>
                 {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
               </select>
-              <div className="flex items-center gap-1">
-                {SPEEDS.map((s) => (
-                  <button key={s} onClick={() => changeSpeed(s)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>
-                    {s}x
-                  </button>
-                ))}
-              </div>
               <button onClick={stopStream} className="ml-auto flex items-center gap-1 px-2 py-1 bg-slate-700 text-white rounded text-[10px] hover:bg-slate-600">
                 <StopCircle size={10} /> Stop
               </button>
