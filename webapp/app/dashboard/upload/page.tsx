@@ -433,7 +433,7 @@ export default function UploadPage() {
             {step === 'done' && (
               <div className="flex flex-col items-center gap-3 p-4 bg-gradient-to-br from-green-900/40 to-emerald-900/40 border-2 border-green-500/60 rounded-lg shadow-lg">
                 <div className="flex items-center justify-center w-12 h-12 bg-green-500/20 rounded-full">
-                  <CheckCircle className="w-8 h-8 text-green-400 animate-bounce" />
+                  <CheckCircle className="w-6 h-6 text-green-400" />
                 </div>
                 <div className="text-center">
                   <p className="text-base text-white font-bold mb-1">Upload Successful!</p>
