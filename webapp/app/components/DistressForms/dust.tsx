@@ -264,7 +264,7 @@ export default function DustForm() {
             )}
 
             {videoId && polygonPoints.length === 4 && (
-              <button onClick={startStream} className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg">
+              <button onClick={() => startStream()} className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg">
                 <Play size={18} /> Run Live Detection
               </button>
             )}
