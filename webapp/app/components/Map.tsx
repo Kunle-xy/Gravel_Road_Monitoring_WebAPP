@@ -165,10 +165,11 @@ function DrawPolygonControl({
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
         fill="none" stroke="${active ? "#2563eb" : "#111827"}" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="5 3 19 12 5 21 5 3"/>
-        <rect x="2" y="2" width="5" height="5" rx="1" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
-        <rect x="17" y="9.5" width="5" height="5" rx="1" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
-        <rect x="2" y="17" width="5" height="5" rx="1" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+        <rect x="3" y="3" width="18" height="18" rx="1"/>
+        <circle cx="3" cy="3" r="2.5" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+        <circle cx="21" cy="3" r="2.5" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+        <circle cx="21" cy="21" r="2.5" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
+        <circle cx="3" cy="21" r="2.5" fill="${active ? "#2563eb" : "#111827"}" stroke="none"/>
       </svg>
     `;
   }, [mode]);
