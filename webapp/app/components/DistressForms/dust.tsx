@@ -8,14 +8,25 @@ interface VideoInfo { id: string; filename: string; duration_seconds: number | n
 interface FolderInfo { id: string; name: string; }
 interface Toast { id: number; message: string; type: "error" | "success" | "info"; }
 
+const MODELS = [
+  { id: "yolov5", label: "YOLOv5" },
+  { id: "yolov8", label: "YOLOv8" },
+  { id: "yolov9", label: "YOLOv9" },
+  { id: "yolov10", label: "YOLOv10" },
+  { id: "yolo11", label: "YOLO11" },
+  { id: "yolo26", label: "YOLO26" },
+];
+
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+
 function ToastContainer({ toasts }: { toasts: Toast[] }) {
   if (toasts.length === 0) return null;
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
       {toasts.map((t) => (
-        <div key={t.id} className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-xl text-white text-[13px] font-medium border ${
+        <div key={t.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-xl text-white text-[11px] font-medium border ${
           t.type === "error" ? "bg-red-600 border-red-500" : t.type === "success" ? "bg-green-600 border-green-500" : "bg-blue-600 border-blue-500"
-        }`}><AlertCircle size={16} /><span>{t.message}</span></div>
+        }`}><AlertCircle size={12} /><span>{t.message}</span></div>
       ))}
     </div>
   );
@@ -38,17 +49,10 @@ export default function DustForm() {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1.0);
   const [selectedModel, setSelectedModel] = useState("yolo26");
-
-  const models = [
-    { id: "yolov5", label: "YOLOv5", desc: "Classic, proven" },
-    { id: "yolov8", label: "YOLOv8", desc: "Fast & accurate" },
-    { id: "yolov9", label: "YOLOv9", desc: "Enhanced features" },
-    { id: "yolov10", label: "YOLOv10", desc: "NMS-free" },
-    { id: "yolo11", label: "YOLO11", desc: "High accuracy" },
-    { id: "yolo26", label: "YOLO26", desc: "Latest, edge-optimized" },
-  ];
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+
+  const sel = "text-[10px] bg-slate-700 border border-slate-600 rounded px-1.5 py-1 text-slate-100 focus:outline-none focus:border-cyan-400";
 
   const showToast = (msg: string, type: Toast["type"] = "error") => {
     const id = Date.now();
@@ -58,10 +62,7 @@ export default function DustForm() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [vRes, fRes] = await Promise.all([
-        fetchWithAuth(API_ENDPOINTS.DUST.VIDEOS),
-        fetchWithAuth(API_ENDPOINTS.FOLDERS.LIST),
-      ]);
+      const [vRes, fRes] = await Promise.all([fetchWithAuth(API_ENDPOINTS.DUST.VIDEOS), fetchWithAuth(API_ENDPOINTS.FOLDERS.LIST)]);
       if (vRes.ok) setExistingVideos(await vRes.json());
       if (fRes.ok) { const d = await fRes.json(); setFolders(d); if (d.length > 0 && !selectedFolderId) setSelectedFolderId(d[0].id); }
     } catch {} finally { setLoadingVideos(false); }
@@ -70,31 +71,25 @@ export default function DustForm() {
 
   const selectVideo = async (v: VideoInfo) => {
     setVideoId(v.id); setPolygonPoints([]); setIsDrawing(true); setIsStreaming(false); setStreamUrl(null); setFirstFrameUrl(null);
-    try {
-      const r = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(v.id));
-      if (r.ok) setFirstFrameUrl(URL.createObjectURL(await r.blob()));
-    } catch { showToast("Failed to load first frame"); }
+    try { const r = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(v.id)); if (r.ok) setFirstFrameUrl(URL.createObjectURL(await r.blob())); }
+    catch { showToast("Failed to load frame"); }
   };
 
   const deleteVideo = async (id: string) => {
-    try {
-      const r = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_DELETE(id), { method: "DELETE" });
-      if (r.ok) { setExistingVideos((p) => p.filter((v) => v.id !== id)); if (videoId === id) { setVideoId(null); setFirstFrameUrl(null); } showToast("Deleted", "success"); }
-    } catch { showToast("Failed to delete"); }
+    try { const r = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_DELETE(id), { method: "DELETE" }); if (r.ok) { setExistingVideos((p) => p.filter((v) => v.id !== id)); if (videoId === id) { setVideoId(null); setFirstFrameUrl(null); } showToast("Deleted", "success"); } }
+    catch { showToast("Failed to delete"); }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
-    if (!f.name.toLowerCase().match(/\.(mp4|avi|mov)$/)) { showToast("Only .mp4, .avi, .mov allowed"); return; }
+    if (!f.name.toLowerCase().match(/\.(mp4|avi|mov)$/)) { showToast("Only .mp4, .avi, .mov"); return; }
     setVideoFile(f);
   };
 
   const handleUpload = async () => {
     if (!videoFile) return; setUploading(true); setUploadProgress(0);
     try {
-      const pRes = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_PRESIGN, {
-        method: "POST", body: JSON.stringify({ filename: videoFile.name, file_size: videoFile.size, folder_id: selectedFolderId || undefined, content_type: videoFile.type || "video/mp4" }),
-      });
+      const pRes = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_PRESIGN, { method: "POST", body: JSON.stringify({ filename: videoFile.name, file_size: videoFile.size, folder_id: selectedFolderId || undefined, content_type: videoFile.type || "video/mp4" }) });
       if (!pRes.ok) throw new Error("Presign failed");
       const { presigned_url, video_id } = await pRes.json();
       const xhr = new XMLHttpRequest();
@@ -111,7 +106,7 @@ export default function DustForm() {
     finally { setUploading(false); }
   };
 
-  // --- Polygon ---
+  // Polygon
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current; const img = imageRef.current;
     if (!canvas || !img) return;
@@ -125,208 +120,150 @@ export default function DustForm() {
       if (polygonPoints.length === 4) { ctx.closePath(); ctx.fill(); }
       ctx.stroke();
       polygonPoints.forEach((pt, i) => {
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], 12, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,255,0,0.3)"; ctx.fill();
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], 8, 0, Math.PI * 2); ctx.fillStyle = "#00ff00"; ctx.fill();
-        ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
-        ctx.fillStyle = "#fff"; ctx.font = "bold 16px sans-serif"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
-        ctx.strokeText(`${i + 1}`, pt[0] + 14, pt[1] - 14); ctx.fillText(`${i + 1}`, pt[0] + 14, pt[1] - 14);
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], 10, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,255,0,0.3)"; ctx.fill();
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], 6, 0, Math.PI * 2); ctx.fillStyle = "#00ff00"; ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 14px sans-serif"; ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
+        ctx.strokeText(`${i + 1}`, pt[0] + 10, pt[1] - 10); ctx.fillText(`${i + 1}`, pt[0] + 10, pt[1] - 10);
       });
     }
     if (polygonPoints.length < 4 && isDrawing) {
-      const labels = ["Click TOP-LEFT corner", "Click TOP-RIGHT corner", "Click BOTTOM-RIGHT corner", "Click BOTTOM-LEFT corner"];
-      ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(10, 10, 320, 36);
-      ctx.fillStyle = "#00ffff"; ctx.font = "bold 18px sans-serif"; ctx.fillText(labels[polygonPoints.length], 20, 35);
+      const labels = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"];
+      ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(8, 8, 200, 26);
+      ctx.fillStyle = "#00ffff"; ctx.font = "bold 14px sans-serif"; ctx.fillText(`Click ${labels[polygonPoints.length]}`, 14, 27);
     }
   }, [polygonPoints, isDrawing]);
-
   useEffect(() => { if (!firstFrameUrl) return; const img = new Image(); img.onload = () => { imageRef.current = img; drawCanvas(); }; img.src = firstFrameUrl; }, [firstFrameUrl, drawCanvas]);
   useEffect(() => { drawCanvas(); }, [polygonPoints, drawCanvas]);
-
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || polygonPoints.length >= 4) return;
-    const c = canvasRef.current; if (!c) return;
-    const r = c.getBoundingClientRect();
-    const x = Math.round((e.clientX - r.left) * (c.width / r.width));
-    const y = Math.round((e.clientY - r.top) * (c.height / r.height));
-    const pts = [...polygonPoints, [x, y]]; setPolygonPoints(pts);
-    if (pts.length === 4) setIsDrawing(false);
+    const c = canvasRef.current; if (!c) return; const r = c.getBoundingClientRect();
+    const pts = [...polygonPoints, [Math.round((e.clientX - r.left) * (c.width / r.width)), Math.round((e.clientY - r.top) * (c.height / r.height))]];
+    setPolygonPoints(pts); if (pts.length === 4) setIsDrawing(false);
   };
 
-  // --- Stream ---
-  const startStream = (playSpeed?: number, modelOverride?: string) => {
+  // Stream
+  const startStream = (s?: number, m?: string) => {
     if (!videoId || polygonPoints.length !== 4) return;
-    const s = playSpeed ?? speed;
-    const m = modelOverride ?? selectedModel;
-    const url = `${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, s, m)}`;
-    setStreamUrl(url);
+    setStreamUrl(`${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, s ?? speed, m ?? selectedModel)}`);
     setIsStreaming(true);
-    if (!playSpeed && !modelOverride) showToast("Live detection started!", "info");
   };
-
-  const changeSpeed = (newSpeed: number) => {
-    setSpeed(newSpeed);
-    if (isStreaming && videoId && polygonPoints.length === 4) {
-      setStreamUrl(null);
-      setTimeout(() => startStream(newSpeed), 100);
-    }
-  };
-
-  const changeModel = (newModel: string) => {
-    setSelectedModel(newModel);
-    if (isStreaming && videoId && polygonPoints.length === 4) {
-      setStreamUrl(null);
-      setTimeout(() => startStream(undefined, newModel), 100);
-    }
-  };
-
-  const stopStream = () => {
-    setStreamUrl(null);
-    setIsStreaming(false);
-  };
+  const changeSpeed = (s: number) => { setSpeed(s); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(s), 50); } };
+  const changeModel = (m: string) => { setSelectedModel(m); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(undefined, m), 50); } };
+  const stopStream = () => { setStreamUrl(null); setIsStreaming(false); };
 
   return (
     <>
       <ToastContainer toasts={toasts} />
-      <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-4 text-[13px] text-slate-100 leading-tight ring-1 ring-slate-700/50">
-        <h2 className="text-[15px] font-bold border-b border-slate-700 pb-2 mb-3 text-slate-200 text-center">
-          Object Detection (YOLOv8)
+      <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[10px] text-slate-100 ring-1 ring-slate-700/50">
+        <h2 className="text-[12px] font-bold border-b border-slate-700 pb-1.5 mb-2 text-slate-200 text-center">
+          Object Detection (YOLO)
         </h2>
 
-        {/* Setup */}
+        {/* === SETUP === */}
         {!isStreaming && (
-          <div className="space-y-3">
-            {loadingVideos ? (
-              <div className="flex items-center gap-2 text-slate-400 text-[12px]"><Loader2 size={14} className="animate-spin" /> Loading...</div>
-            ) : existingVideos.length > 0 && (
+          <div className="space-y-2">
+            {/* Row 1: Video select + Model + Project */}
+            <div className="flex gap-1.5 items-end">
+              {/* Video dropdown */}
+              <div className="flex-1">
+                <label className="font-semibold text-slate-400 block mb-0.5">Video</label>
+                {loadingVideos ? <span className="text-slate-500">Loading...</span> : (
+                  <select
+                    value={videoId || ""}
+                    onChange={(e) => { const v = existingVideos.find(v => v.id === e.target.value); if (v) selectVideo(v); }}
+                    className={sel + " w-full"}
+                  >
+                    <option value="">-- select --</option>
+                    {existingVideos.map((v) => (
+                      <option key={v.id} value={v.id}>{v.filename}{v.duration_seconds ? ` (${v.duration_seconds.toFixed(0)}s)` : ""}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {/* Model dropdown */}
               <div>
-                <label className="font-semibold text-[12px] text-slate-300 mb-1 block">Previous Videos</label>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {existingVideos.map((v) => (
-                    <div key={v.id} className={`flex items-center gap-2 px-2 py-1.5 rounded text-[12px] cursor-pointer transition-colors ${videoId === v.id ? "bg-cyan-900/40 border border-cyan-700/50" : "bg-slate-700/50 hover:bg-slate-700"}`} onClick={() => selectVideo(v)}>
-                      <Video size={14} className="text-slate-400 shrink-0" />
-                      <span className="flex-1 truncate">{v.filename}</span>
-                      <span className="text-slate-500 text-[10px] shrink-0">{v.duration_seconds ? `${v.duration_seconds.toFixed(0)}s` : ""}</span>
-                      <button onClick={(e) => { e.stopPropagation(); deleteVideo(v.id); }} className="text-red-400 hover:text-red-300 shrink-0"><Trash2 size={12} /></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="font-semibold text-[12px] text-slate-300 mb-1 block">{existingVideos.length > 0 ? "Or Upload New" : "Upload Video"}</label>
-              {folders.length > 0 && (
-                <select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className="w-full mb-2 text-[12px] bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-slate-100 focus:outline-none focus:border-cyan-400">
-                  <option value="">No project</option>
-                  {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                <label className="font-semibold text-slate-400 block mb-0.5">Model</label>
+                <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className={sel}>
+                  {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                 </select>
-              )}
-              <div className="flex gap-2">
-                <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 border border-slate-600 border-dashed rounded-lg cursor-pointer hover:bg-slate-600 transition-colors">
-                  <Upload size={16} /><span className="text-[12px] truncate">{videoFile ? videoFile.name : "Select .mp4 file"}</span>
-                  <input type="file" accept=".mp4,.avi,.mov" onChange={handleFileSelect} className="hidden" />
-                </label>
-                <button onClick={handleUpload} disabled={!videoFile || uploading} className={`px-4 py-2.5 rounded-lg text-[12px] font-medium transition-colors ${!videoFile || uploading ? "bg-slate-700 text-slate-500 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
-                  {uploading ? `${uploadProgress}%` : "Upload"}
-                </button>
               </div>
-              {uploading && <div className="w-full bg-slate-700 rounded-full h-1.5 mt-1"><div className="bg-blue-500 h-1.5 transition-all" style={{ width: `${uploadProgress}%` }} /></div>}
             </div>
 
-            {/* Model Selection */}
-            {videoId && (
-              <div className="border-t border-slate-700 pt-3">
-                <label className="font-semibold text-[12px] text-slate-300 mb-1.5 block">Detection Model</label>
-                <div className="space-y-1">
-                  {models.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setSelectedModel(m.id)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[12px] transition-colors ${
-                        selectedModel === m.id ? "bg-cyan-900/50 border border-cyan-700/60 text-cyan-200" : "bg-slate-700/40 hover:bg-slate-700 text-slate-300"
-                      }`}
-                    >
-                      <span className="font-medium">{m.label}</span>
-                      <span className="text-[10px] text-slate-400">{m.desc}</span>
-                    </button>
-                  ))}
+            {/* Row 2: Upload new */}
+            <div className="flex gap-1.5 items-end">
+              {folders.length > 0 && (
+                <div>
+                  <label className="font-semibold text-slate-400 block mb-0.5">Project</label>
+                  <select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className={sel}>
+                    <option value="">None</option>
+                    {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="flex-1">
+                <label className="font-semibold text-slate-400 block mb-0.5">Upload new</label>
+                <div className="flex gap-1">
+                  <label className="flex-1 flex items-center gap-1 px-2 py-1 bg-slate-700 border border-slate-600 border-dashed rounded cursor-pointer hover:bg-slate-600">
+                    <Upload size={10} /><span className="truncate">{videoFile ? videoFile.name : ".mp4"}</span>
+                    <input type="file" accept=".mp4,.avi,.mov" onChange={handleFileSelect} className="hidden" />
+                  </label>
+                  <button onClick={handleUpload} disabled={!videoFile || uploading} className={`px-2 py-1 rounded font-medium ${!videoFile || uploading ? "bg-slate-700 text-slate-500" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+                    {uploading ? `${uploadProgress}%` : "Go"}
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
+            {uploading && <div className="w-full bg-slate-700 rounded-full h-1"><div className="bg-blue-500 h-1 transition-all" style={{ width: `${uploadProgress}%` }} /></div>}
 
+            {/* Polygon drawing */}
             {firstFrameUrl && (
-              <div className="space-y-2 border-t border-slate-700 pt-3">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-[12px] text-slate-300">{isDrawing ? `Select detection region (${polygonPoints.length}/4)` : "Detection region set"}</label>
-                  {polygonPoints.length > 0 && <button onClick={() => { setPolygonPoints([]); setIsDrawing(true); }} className="text-[11px] text-red-400 hover:text-red-300">Reset</button>}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-slate-400">{isDrawing ? `Region (${polygonPoints.length}/4)` : "Region set"}</span>
+                  {polygonPoints.length > 0 && <button onClick={() => { setPolygonPoints([]); setIsDrawing(true); }} className="text-red-400 hover:text-red-300">Reset</button>}
                 </div>
-                <canvas ref={canvasRef} onClick={handleCanvasClick} className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : "cursor-default"}`} style={{ maxHeight: "380px", objectFit: "contain" }} />
+                <canvas ref={canvasRef} onClick={handleCanvasClick} className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : ""}`} style={{ maxHeight: "280px", objectFit: "contain" }} />
               </div>
             )}
 
+            {/* Start */}
             {videoId && polygonPoints.length === 4 && (
-              <button onClick={() => startStream()} className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-red-700 text-white rounded-lg text-[14px] font-bold hover:bg-red-800 transition-colors shadow-lg">
-                <Play size={18} /> Run Live Detection
+              <button onClick={() => startStream()} className="w-full flex items-center justify-center gap-1.5 px-2 py-2 bg-red-700 text-white rounded-lg text-[11px] font-bold hover:bg-red-800 shadow-lg">
+                <Play size={14} /> Run Detection
               </button>
             )}
           </div>
         )}
 
-        {/* Live Stream */}
+        {/* === LIVE STREAM === */}
         {isStreaming && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="relative">
-              {/* MJPEG stream displayed as <img> — auto-updates each frame */}
               {streamUrl && (
-                <img
-                  src={streamUrl}
-                  alt="YOLOv8 Live Detection"
-                  className="w-full rounded border border-slate-600"
-                  style={{ maxHeight: "420px", objectFit: "contain", backgroundColor: "#000" }}
-                />
+                <img src={streamUrl} alt="Detection" className="w-full rounded border border-slate-600" style={{ maxHeight: "55vh", objectFit: "contain", backgroundColor: "#000" }} />
               )}
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-red-600/90 px-2 py-1 rounded text-[11px] font-bold text-white">
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                LIVE DETECTION
+              <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-red-600/90 px-1.5 py-0.5 rounded text-[9px] font-bold text-white">
+                <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /> LIVE
               </div>
             </div>
 
-            {/* Model + Speed Controls */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] text-slate-400 shrink-0">Model:</span>
-                {models.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => changeModel(m.id)}
-                    className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                      selectedModel === m.id ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                    }`}
-                    title={m.desc}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-400 shrink-0">Speed:</span>
-                {[0.25, 0.5, 1, 2, 4].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => changeSpeed(s)}
-                    className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                      speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                    }`}
-                  >
+            {/* Controls row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={selectedModel} onChange={(e) => changeModel(e.target.value)} className={sel}>
+                {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+              <div className="flex items-center gap-1">
+                {SPEEDS.map((s) => (
+                  <button key={s} onClick={() => changeSpeed(s)} className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${speed === s ? "bg-cyan-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>
                     {s}x
                   </button>
                 ))}
               </div>
+              <button onClick={stopStream} className="ml-auto flex items-center gap-1 px-2 py-1 bg-slate-700 text-white rounded text-[10px] hover:bg-slate-600">
+                <StopCircle size={10} /> Stop
+              </button>
             </div>
-
-            <button onClick={stopStream} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 text-white rounded-lg text-[13px] font-medium hover:bg-slate-600 transition-colors">
-              <StopCircle size={16} /> Stop & Run Another
-            </button>
           </div>
         )}
       </div>
