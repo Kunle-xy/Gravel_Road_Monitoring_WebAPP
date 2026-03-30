@@ -233,21 +233,15 @@ function ProfileWidget() {
     }
   };
 
-  // Delete file handler
+  // Delete file handler (confirmation handled by TiffFileItem)
   const handleDelete = async (fileId: string, filename: string) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"? This will remove the file from both the database and cloud storage.`)) {
-      return;
-    }
-
     try {
       const response = await fetchWithAuth(API_ENDPOINTS.FILES.DELETE(fileId), {
         method: 'DELETE',
       });
 
       if (response.ok || response.status === 204) {
-        // Refresh file list after deletion
         await fetchAllFiles();
-        alert(`File "${filename}" deleted successfully.`);
       } else {
         alert(`Failed to delete file "${filename}". Please try again.`);
       }

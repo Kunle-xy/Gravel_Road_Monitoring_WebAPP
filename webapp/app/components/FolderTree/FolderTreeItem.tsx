@@ -6,6 +6,29 @@ import TiffFileItem from '../TiffFiles/TiffFileItem';
 import { fetchWithAuth, API_ENDPOINTS } from '@/app/lib/api';
 
 function VideoFileItem({ video, onDeleteVideo }: { video: { id: string; filename: string; duration_seconds?: number }; onDeleteVideo: (id: string, name: string) => void }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+
+  if (showConfirm) {
+    return (
+      <div className="bg-red-900/20 border border-red-500/50 rounded p-1.5 space-y-1">
+        <div className="text-[9px] text-white font-semibold">Delete &quot;{video.filename}&quot;?</div>
+        <div className="text-[8px] text-white opacity-80">Type &quot;permanently delete&quot; to confirm.</div>
+        <input type="text" value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && confirmText === 'permanently delete') { onDeleteVideo(video.id, video.filename); setShowConfirm(false); setConfirmText(''); } if (e.key === 'Escape') { setShowConfirm(false); setConfirmText(''); } }}
+          placeholder="permanently delete" autoFocus
+          className="w-full bg-white/10 text-[9px] text-white px-1.5 py-0.5 rounded border border-white/20 focus:outline-none focus:border-red-400 placeholder:text-slate-500" />
+        <div className="flex gap-1">
+          <button onClick={() => { if (confirmText === 'permanently delete') { onDeleteVideo(video.id, video.filename); setShowConfirm(false); setConfirmText(''); } }}
+            disabled={confirmText !== 'permanently delete'}
+            className="flex-1 bg-red-600/40 hover:bg-red-600/60 disabled:bg-red-900/20 disabled:text-slate-500 disabled:cursor-not-allowed px-1.5 py-0.5 rounded text-[8px] text-white font-semibold">Delete</button>
+          <button onClick={() => { setShowConfirm(false); setConfirmText(''); }}
+            className="flex-1 bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded text-[8px] text-white">Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1.5 px-1.5 py-1 bg-slate-700/30 rounded text-[10px]">
       <Video size={12} className="text-cyan-400 shrink-0" />
@@ -13,11 +36,7 @@ function VideoFileItem({ video, onDeleteVideo }: { video: { id: string; filename
       {video.duration_seconds && (
         <span className="text-slate-500 text-[9px] shrink-0">{video.duration_seconds.toFixed(0)}s</span>
       )}
-      <button
-        onClick={() => onDeleteVideo(video.id, video.filename)}
-        className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors"
-        title="Delete video"
-      >
+      <button onClick={() => setShowConfirm(true)} className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors" title="Delete video">
         <Trash2 size={10} className="text-red-400" />
       </button>
     </div>
@@ -63,7 +82,6 @@ interface FolderTreeItemProps {
 export default function FolderTreeItem({ folder, onDelete, onRefresh }: FolderTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(folder.is_expanded);
   const handleDeleteVideo = async (videoId: string, filename: string) => {
-    if (!confirm(`Delete video "${filename}"?`)) return;
     try {
       const res = await fetchWithAuth(API_ENDPOINTS.DUST.VIDEO_DELETE(videoId), { method: 'DELETE' });
       if (res.ok || res.status === 204) onRefresh();

@@ -26,6 +26,8 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
   const { map, addLayer, toggleLayer, isLayerVisible, allLayers } = useMap();
   const [initializing, setInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
   const checked = isLayerVisible(file.id);
   const layerExists = allLayers.has(file.id);
 
@@ -142,6 +144,46 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
   const isReady = layerExists && !initializing;
   const showLoading = initializing || (file.tile_status === 'processing' || file.tile_status === 'queued');
 
+  if (showDeleteConfirm) {
+    return (
+      <li className="bg-red-900/20 border border-red-500/50 rounded-lg p-2 space-y-1.5">
+        <div className="text-[10px] text-white font-semibold">
+          Permanently delete &quot;{file.filename}&quot;?
+        </div>
+        <div className="text-[9px] text-white opacity-80">
+          This will remove the file from both the database and cloud storage. Type &quot;permanently delete&quot; to confirm.
+        </div>
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && confirmText === 'permanently delete') { onDelete(file.id, file.filename); setShowDeleteConfirm(false); setConfirmText(''); }
+            if (e.key === 'Escape') { setShowDeleteConfirm(false); setConfirmText(''); }
+          }}
+          placeholder='Type: permanently delete'
+          autoFocus
+          className="w-full bg-white/10 text-[10px] text-white px-2 py-1 rounded border border-white/20 focus:outline-none focus:border-red-400 placeholder:text-slate-500"
+        />
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => { if (confirmText === 'permanently delete') { onDelete(file.id, file.filename); setShowDeleteConfirm(false); setConfirmText(''); } }}
+            disabled={confirmText !== 'permanently delete'}
+            className="flex-1 bg-red-600/40 hover:bg-red-600/60 disabled:bg-red-900/20 disabled:text-slate-500 disabled:cursor-not-allowed px-2 py-0.5 rounded text-[9px] text-white font-semibold"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => { setShowDeleteConfirm(false); setConfirmText(''); }}
+            className="flex-1 bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded text-[9px] text-white"
+          >
+            Cancel
+          </button>
+        </div>
+      </li>
+    );
+  }
+
   return (
     <li className="flex items-center gap-1.5">
       <button
@@ -176,7 +218,7 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
       </div>
 
       <button
-        onClick={() => onDelete(file.id, file.filename)}
+        onClick={() => setShowDeleteConfirm(true)}
         className="p-0.5 hover:bg-red-500/20 rounded transition-colors shrink-0"
         title="Delete file"
         aria-label={`Delete ${file.filename}`}
