@@ -50,7 +50,8 @@ def analyze_pothole_task(self, job_id: str):
         db.commit()
 
         # Calculate depth, width, severity
-        pixel_resolution = metadata.get("pixel_width", metadata.get("resolution", 0.01))
+        res = metadata.get("resolution", (0.01, 0.01))
+        pixel_resolution = float(res[0]) if isinstance(res, (tuple, list)) else float(res)
         results = analyze_pothole(elevation_data, pixel_resolution)
         logger.info(f"Pothole job {job_id}: depth={results['depth_inches']:.2f}in, width={results['width_feet']:.2f}ft, severity={results['severity']}")
 

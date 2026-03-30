@@ -388,7 +388,7 @@ async def upload_file(
                         db_file.s3_bucket,
                         db_file.cog_s3_key,
                         12,  # min_zoom - visible when zoomed out
-                        21   # max_zoom - road-level detail
+                        23   # max_zoom - high detail
                     ],
                     task_id=f"tile_{db_file.id}"
                 )
@@ -588,7 +588,7 @@ async def complete_upload(
                 settings.S3_BUCKET_RAW,
                 body.s3_key,
                 12,   # min_zoom - visible when zoomed out
-                21,   # max_zoom - road-level detail
+                23,   # max_zoom - high detail
             ],
             task_id=f"tile_{db_file.id}"
         )
@@ -797,7 +797,7 @@ async def multipart_complete(
     # Queue Celery task
     try:
         task = generate_tiles_task.apply_async(
-            args=[str(db_file.id), settings.S3_BUCKET_RAW, body.s3_key, 12, 21],
+            args=[str(db_file.id), settings.S3_BUCKET_RAW, body.s3_key, 12, 23],
             task_id=f"tile_{db_file.id}",
         )
         db_file.tile_status = "queued"
