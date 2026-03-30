@@ -393,7 +393,7 @@ function ProfileWidget() {
         <Link href="/dashboard/upload">
           <button
             type="button"
-            className={`w-full rounded-lg bg-white/10 px-2.5 py-1.5 text-xs hover:bg-white/15 transition-colors flex items-center gap-2 ${
+            className={`w-full rounded-lg border border-dashed border-slate-500 bg-white/5 px-2.5 py-1.5 text-xs hover:bg-white/15 transition-colors flex items-center gap-2 ${
               open ? "" : "justify-center"
             }`}
           >
@@ -599,7 +599,7 @@ function ProfileWidget() {
         {open && !showCreateFolder && (
           <button
             onClick={() => setShowCreateFolder(true)}
-            className="w-full rounded-lg bg-blue-500/20 px-2.5 py-1.5 text-xs hover:bg-blue-500/30 transition-colors flex items-center gap-2 text-blue-300"
+            className="w-full rounded-lg border border-dashed border-blue-500/50 bg-blue-500/10 px-2.5 py-1.5 text-xs hover:bg-blue-500/20 transition-colors flex items-center gap-2 text-blue-300"
           >
             <FolderPlus className="h-4 w-4" />
             <span>New Project</span>
