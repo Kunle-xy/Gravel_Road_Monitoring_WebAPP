@@ -87,7 +87,8 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
         // Create simple tile layer - no authentication needed for CloudFront
         const layer = new L.TileLayer(tileUrl, {
           opacity: 0.8,
-          maxZoom: 21,
+          maxZoom: 26,
+          maxNativeZoom: 23,
           minZoom: 12,
           attribution: file.filename,
           crossOrigin: 'anonymous',
