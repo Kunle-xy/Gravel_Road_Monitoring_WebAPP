@@ -345,16 +345,16 @@ export default function UploadPage() {
                   No projects available. Create a project first in the sidebar.
                 </div>
               ) : (
-                <div style={{ height: '130px', maxHeight: '130px', minHeight: '130px' }} className="space-y-2 overflow-y-auto bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                <select
+                  value={selectedFolderId}
+                  onChange={(e) => setSelectedFolderId(e.target.value)}
+                  className="w-full text-sm bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-500"
+                >
+                  <option value="">-- Select a project --</option>
                   {folders.map((folder) => (
-                    <label key={folder.id} className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors ${selectedFolderId === folder.id ? 'bg-slate-700 ring-2 ring-slate-500' : 'hover:bg-slate-700/50'}`}>
-                      <input type="radio" name="project" value={folder.id} checked={selectedFolderId === folder.id}
-                        onChange={(e) => setSelectedFolderId(e.target.value)} className="w-4 h-4 text-slate-500 focus:ring-slate-500" />
-                      <Folder className="w-4 h-4" style={{ color: folder.color }} />
-                      <span className="text-sm text-white flex-1">{folder.name}</span>
-                    </label>
+                    <option key={folder.id} value={folder.id}>{folder.name}</option>
                   ))}
-                </div>
+                </select>
               )}
             </div>
 
