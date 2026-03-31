@@ -220,7 +220,7 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
 
       <button
         onClick={() => setShowDeleteConfirm(true)}
-        className="p-0.5 hover:bg-red-500/20 rounded transition-colors shrink-0 opacity-0 group-hover/file:opacity-100"
+        className="p-0.5 hover:bg-red-500/20 rounded transition-colors shrink-0 opacity-0 pointer-events-none group-hover/file:opacity-100 group-hover/file:pointer-events-auto"
         title="Delete file"
         aria-label={`Delete ${file.filename}`}
       >

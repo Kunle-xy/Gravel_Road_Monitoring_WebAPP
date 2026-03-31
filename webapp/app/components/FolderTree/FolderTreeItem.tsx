@@ -36,7 +36,7 @@ function VideoFileItem({ video, onDeleteVideo }: { video: { id: string; filename
       {video.duration_seconds && (
         <span className="text-slate-500 text-[9px] shrink-0">{video.duration_seconds.toFixed(0)}s</span>
       )}
-      <button onClick={() => setShowConfirm(true)} className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors opacity-0 group-hover/video:opacity-100" title="Delete video">
+      <button onClick={() => setShowConfirm(true)} className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors opacity-0 pointer-events-none group-hover/video:opacity-100 group-hover/video:pointer-events-auto" title="Delete video">
         <Trash2 size={10} className="text-red-400" />
       </button>
     </div>
