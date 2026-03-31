@@ -23,7 +23,7 @@ const DistressFormsOverlay = () => {
         {/* Backdrop — no click-to-close, use X button only */}
         <div className="absolute inset-0 bg-black/40" />
         {/* Centered modal */}
-        <div className="relative bg-white outline rounded-lg p-5 w-[44rem] max-w-[95vw] max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="relative bg-white outline rounded-lg p-3 sm:p-5 w-[95vw] sm:w-[44rem] max-w-[44rem] max-h-[90vh] overflow-y-auto shadow-2xl">
           <button
             onClick={() => setActiveDistress(null)}
             className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"
@@ -44,8 +44,17 @@ const DistressFormsOverlay = () => {
 
   // All other distress types use the right-side panel
   return (
-    <div className="absolute right-3 top-2 z-20 pointer-events-auto">
-      <div className="bg-white outline rounded-sm p-3 w-[22rem] sm:w-[24rem] md:w-[26rem] max-w-[92vw]">
+    <div className="absolute right-1 sm:right-3 top-1 sm:top-2 z-20 pointer-events-auto">
+      <div className="bg-white outline rounded-sm p-3 w-[92vw] sm:w-[24rem] md:w-[26rem] max-w-[26rem] max-h-[85vh] overflow-y-auto">
+        <button
+          onClick={() => setActiveDistress(null)}
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 z-10"
+          aria-label="Close"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
         <h1 className="text-xs font-semibold mb-2 text-center text-red-800">
           <strong>{activeDistress}</strong> automatic detection
         </h1>

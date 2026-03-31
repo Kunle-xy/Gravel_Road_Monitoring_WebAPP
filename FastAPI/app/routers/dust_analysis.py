@@ -160,17 +160,14 @@ def get_first_frame(
 
 @router.get("/models")
 def list_models():
-    """List available YOLO model variants."""
-    from app.workers.dust.detection import AVAILABLE_MODELS
-    return [
-        {"id": k, "label": v["label"], "description": v["desc"]}
-        for k, v in AVAILABLE_MODELS.items()
-    ]
+    """Return the YOLO model used for detection."""
+    from app.workers.dust.detection import MODEL_LABEL
+    return [{"id": "yolo26", "label": MODEL_LABEL, "description": "Latest, edge-optimized"}]
 
 
 # --- Live MJPEG Stream ---
 
-def _generate_mjpeg(video_path: str, polygon_points: list, speed: float = 1.0, model_name: str = "yolov8") -> Generator[bytes, None, None]:
+def _generate_mjpeg(video_path: str, polygon_points: list, speed: float = 1.0) -> Generator[bytes, None, None]:
     """
     Generator that reads video frame-by-frame, runs YOLO detection,
     and yields MJPEG frames for streaming.
@@ -193,7 +190,7 @@ def _generate_mjpeg(video_path: str, polygon_points: list, speed: float = 1.0, m
             if not ret:
                 break
 
-            annotated = detect_and_annotate(frame, polygon, model_name)
+            annotated = detect_and_annotate(frame, polygon)
 
             _, buffer = cv.imencode(".jpg", annotated, [cv.IMWRITE_JPEG_QUALITY, 80])
             frame_bytes = buffer.tobytes()
@@ -217,16 +214,11 @@ def stream_detection(
     video_id: uuid.UUID,
     polygon: str = Query(..., description="Polygon points as JSON"),
     speed: float = Query(1.0, ge=0.25, le=4.0, description="Playback speed multiplier"),
-    model: str = Query("yolov8", description="YOLO model variant"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Live MJPEG stream with YOLO detection. Speed: 0.25x to 4x."""
     import json
-    from app.workers.dust.detection import AVAILABLE_MODELS
-
-    if model not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"Unknown model. Available: {list(AVAILABLE_MODELS.keys())}")
 
     video = db.query(VideoFile).filter(
         VideoFile.id == video_id, VideoFile.user_id == current_user.id,
@@ -246,7 +238,7 @@ def stream_detection(
 
     def stream_and_cleanup():
         try:
-            yield from _generate_mjpeg(tmp.name, polygon_points, speed, model)
+            yield from _generate_mjpeg(tmp.name, polygon_points, speed)
         finally:
             try:
                 os.unlink(tmp.name)

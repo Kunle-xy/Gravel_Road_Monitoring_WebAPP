@@ -21,7 +21,7 @@ export default function DashboardLayout({
       <DistressProvider>
         <MapProvider>
           <PolygonProvider>
-            <div className="h-screen overflow-hidden flex flex-col">
+            <div className="h-[100dvh] overflow-hidden flex flex-col">
             <header className="font-header shrink-0">
               <Header />
             </header>
@@ -31,8 +31,9 @@ export default function DashboardLayout({
                 <DistressWidget />
               </div>
 
-              <div className="flex-1 flex overflow-hidden">
-                <div className="shrink-0">
+              <div className="flex-1 flex overflow-hidden relative">
+                {/* Sidebar - hidden on mobile by default, overlay when open */}
+                <div className="hidden sm:block shrink-0">
                   <ProfileWidget />
                 </div>
 

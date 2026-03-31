@@ -44,6 +44,7 @@ dependencies = [
     "ultralytics>=8.4.31",
     "opencv-python-headless>=4.13.0.92",
     "websockets>=16.0",
+    "gunicorn>=25.3.0",
 ]
 
 [tool.uv.sources]

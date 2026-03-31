@@ -1,6 +1,6 @@
 """
 YOLO object detection within a bounded road polygon.
-Supports multiple model variants.
+Uses YOLO26-Large for all detection.
 """
 
 import cv2 as cv
@@ -9,39 +9,31 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Cache loaded models by name
-_models: dict = {}
+_model = None
 
-AVAILABLE_MODELS = {
-    "yolov5": {"file": "yolov5lu.pt", "label": "YOLOv5", "desc": "Classic, proven reliability"},
-    "yolov8": {"file": "yolov8l.pt", "label": "YOLOv8", "desc": "Fast and accurate"},
-    "yolov9": {"file": "yolov9e.pt", "label": "YOLOv9", "desc": "Enhanced feature extraction"},
-    "yolov10": {"file": "yolov10l.pt", "label": "YOLOv10", "desc": "NMS-free, efficient"},
-    "yolo11": {"file": "yolo11l.pt", "label": "YOLO11", "desc": "High accuracy"},
-    "yolo26": {"file": "yolo26l.pt", "label": "YOLO26", "desc": "Latest, edge-optimized"},
-}
+MODEL_FILE = "yolo26l.pt"
+MODEL_LABEL = "YOLO26"
 
 
-def get_yolo_model(model_name: str = "yolov8"):
-    """Load a YOLO model by name, cache for reuse."""
-    global _models
-    if model_name not in _models:
+def get_yolo_model():
+    """Load the YOLO model, cache for reuse."""
+    global _model
+    if _model is None:
         from ultralytics import YOLO
         import torch
-        model_info = AVAILABLE_MODELS.get(model_name, AVAILABLE_MODELS["yolov8"])
-        _models[model_name] = YOLO(model_info["file"])
+        _model = YOLO(MODEL_FILE)
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        _models[model_name].to(device)
-        logger.info(f"{model_info['label']} loaded on {device}")
-    return _models[model_name]
+        _model.to(device)
+        logger.info(f"{MODEL_LABEL} loaded on {device}")
+    return _model
 
 
-def detect_and_annotate(frame: np.ndarray, polygon: np.ndarray, model_name: str = "yolov8") -> np.ndarray:
+def detect_and_annotate(frame: np.ndarray, polygon: np.ndarray) -> np.ndarray:
     """
-    Run YOLOv8 on a frame, draw bounding boxes for objects inside the polygon.
+    Run YOLO on a frame, draw bounding boxes for objects inside the polygon.
     Returns the annotated frame.
     """
-    model = get_yolo_model(model_name)
+    model = get_yolo_model()
     results = model.predict(source=frame, conf=0.25, imgsz=640, verbose=False)
 
     # Draw polygon overlay (cyan)

@@ -6,19 +6,19 @@ import Link from "next/link";
 const HomeWidget = () => {
   return (
     <div
-      className="fixed bottom-6 right-6 z-[2147483647]" // MAX SAFE Z-INDEX
-      style={{ pointerEvents: "auto" }} // Ensures clicks work
+      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[2147483647]"
+      style={{ pointerEvents: "auto" }}
     >
       <Link
         href="/"
         aria-label="Home"
-        className="flex h-12 w-12 items-center justify-center rounded-full
+        className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full
                    bg-slate-900 text-white shadow-xl ring-2 ring-slate-700
                    hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-400
                    transition-all duration-200
                    pointer-events-auto"
       >
-        <HomeIcon className="h-6 w-6" />
+        <HomeIcon className="h-5 w-5 sm:h-6 sm:w-6" />
       </Link>
     </div>
   );

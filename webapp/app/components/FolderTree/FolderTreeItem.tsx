@@ -30,13 +30,13 @@ function VideoFileItem({ video, onDeleteVideo }: { video: { id: string; filename
   }
 
   return (
-    <div className="flex items-center gap-1.5 px-1.5 py-1 bg-slate-700/30 rounded text-[10px]">
+    <div className="group/video flex items-center gap-1.5 px-1.5 py-1 bg-slate-700/30 rounded text-[10px]">
       <Video size={12} className="text-cyan-400 shrink-0" />
       <span className="flex-1 truncate text-slate-200">{video.filename}</span>
       {video.duration_seconds && (
         <span className="text-slate-500 text-[9px] shrink-0">{video.duration_seconds.toFixed(0)}s</span>
       )}
-      <button onClick={() => setShowConfirm(true)} className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors" title="Delete video">
+      <button onClick={() => setShowConfirm(true)} className="shrink-0 p-0.5 hover:bg-red-500/20 rounded transition-colors opacity-0 group-hover/video:opacity-100" title="Delete video">
         <Trash2 size={10} className="text-red-400" />
       </button>
     </div>

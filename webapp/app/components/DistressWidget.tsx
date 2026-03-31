@@ -22,11 +22,11 @@ function DistressWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 transition-colors"
+        className="flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md bg-gray-100 hover:bg-gray-200 transition-colors"
         aria-expanded={open}
         aria-controls="distress-list"
       >
-        <span className="text-sm font-medium"> Gravel Distress Types</span>
+        <span className="text-xs sm:text-sm font-medium">Gravel Distress Types</span>
         {/* arrow rotates when open */}
         <svg
           className={`h-4 w-4 transition-transform ${open ? "rotate-180" : "rotate-0"}`}
@@ -50,7 +50,7 @@ function DistressWidget() {
             <li key={index}>
               <button
                 onClick={() => toggleDistress(type)}
-                className={`px-3 py-1 rounded-full shadow-sm hover:shadow transition-all text-sm whitespace-nowrap ${
+                className={`px-2 sm:px-3 py-1 rounded-full shadow-sm hover:shadow transition-all text-xs sm:text-sm whitespace-nowrap ${
                   activeDistress === type
                     ? 'bg-red-800 text-white font-semibold ring-2 ring-red-600'
                     : 'bg-white text-gray-800 hover:bg-gray-500 hover:text-white'

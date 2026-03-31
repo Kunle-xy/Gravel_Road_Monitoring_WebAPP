@@ -9,11 +9,6 @@ interface FolderInfo { id: string; name: string; }
 interface Toast { id: number; message: string; type: "error" | "success" | "info"; }
 
 const MODELS = [
-  { id: "yolov5", label: "YOLOv5" },
-  { id: "yolov8", label: "YOLOv8" },
-  { id: "yolov9", label: "YOLOv9" },
-  { id: "yolov10", label: "YOLOv10" },
-  { id: "yolo11", label: "YOLO11" },
   { id: "yolo26", label: "YOLO26" },
 ];
 
