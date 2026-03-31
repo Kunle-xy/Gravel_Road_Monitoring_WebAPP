@@ -32,8 +32,7 @@ export default function DashboardLayout({
               </div>
 
               <div className="flex-1 flex overflow-hidden">
-                {/* Sidebar - hidden on mobile by default, overlay when open */}
-                <div className="hidden sm:block shrink-0">
+                <div className="shrink-0">
                   <ProfileWidget />
                 </div>
 
