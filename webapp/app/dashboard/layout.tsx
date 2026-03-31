@@ -21,7 +21,7 @@ export default function DashboardLayout({
       <DistressProvider>
         <MapProvider>
           <PolygonProvider>
-            <div className="h-[100dvh] overflow-hidden flex flex-col">
+            <div className="h-screen overflow-hidden flex flex-col">
             <header className="font-header shrink-0">
               <Header />
             </header>
