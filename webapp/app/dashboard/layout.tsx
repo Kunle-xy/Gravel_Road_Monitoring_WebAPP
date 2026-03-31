@@ -31,7 +31,7 @@ export default function DashboardLayout({
                 <DistressWidget />
               </div>
 
-              <div className="flex-1 flex overflow-hidden relative">
+              <div className="flex-1 flex overflow-hidden">
                 {/* Sidebar - hidden on mobile by default, overlay when open */}
                 <div className="hidden sm:block shrink-0">
                   <ProfileWidget />
