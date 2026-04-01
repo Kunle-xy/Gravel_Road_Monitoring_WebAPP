@@ -99,5 +99,13 @@ def delete_pothole_job(
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    import boto3
+    s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+    for key in [job.html_report_s3_key]:
+        if key:
+            try:
+                s3.delete_object(Bucket=settings.S3_BUCKET_RAW, Key=key)
+            except Exception as e:
+                logger.warning(f"Failed to delete S3 object {key}: {e}")
     db.delete(job)
     db.commit()

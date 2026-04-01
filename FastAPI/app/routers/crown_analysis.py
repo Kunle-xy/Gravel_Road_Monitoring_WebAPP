@@ -8,6 +8,7 @@ from app.models import User, CrownAnalysisJob, TiffFile
 from app.schemas import CrownAnalysisCreate, CrownAnalysisResponse, CrownAnalysisStatusResponse
 from app.auth import get_current_active_user
 from app.workers.crown import analyze_crown_task
+from app.config import settings
 
 router = APIRouter(prefix="/crown", tags=["Crown Analysis"])
 
@@ -150,6 +151,14 @@ async def delete_crown_analysis(
     ).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crown analysis job not found")
+    import boto3, logging
+    s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+    for key in [job.html_report_s3_key]:
+        if key:
+            try:
+                s3.delete_object(Bucket=settings.S3_BUCKET_RAW, Key=key)
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Failed to delete S3 object {key}: {e}")
     db.delete(job)
     db.commit()
     return None

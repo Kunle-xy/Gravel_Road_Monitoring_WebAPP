@@ -8,6 +8,7 @@ from app.models import User, CorrugationAnalysisJob, TiffFile
 from app.schemas import CorrugationAnalysisCreate, CorrugationAnalysisResponse, CorrugationAnalysisStatusResponse
 from app.auth import get_current_active_user
 from app.workers.corrugation import analyze_corrugation_task
+from app.config import settings
 
 router = APIRouter(prefix="/corrugation", tags=["Corrugation Analysis"])
 
@@ -100,5 +101,13 @@ async def delete_job(job_id: uuid.UUID, current_user: User = Depends(get_current
     ).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    import boto3, logging
+    s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+    for key in [job.html_report_s3_key]:
+        if key:
+            try:
+                s3.delete_object(Bucket=settings.S3_BUCKET_RAW, Key=key)
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Failed to delete S3 object {key}: {e}")
     db.delete(job)
     db.commit()

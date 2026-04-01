@@ -330,3 +330,25 @@ def get_dust_analysis_status(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.delete("/{job_id}", status_code=204)
+def delete_dust_analysis(
+    job_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    job = db.query(DustAnalysisJob).filter(
+        DustAnalysisJob.id == job_id, DustAnalysisJob.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.results_json:
+        s3_key = job.results_json.get("s3_key")
+        if s3_key:
+            try:
+                s3_client.delete_object(Bucket=settings.S3_BUCKET_NAME, Key=s3_key)
+            except Exception as e:
+                logger.warning(f"Failed to delete S3 object {s3_key}: {e}")
+    db.delete(job)
+    db.commit()

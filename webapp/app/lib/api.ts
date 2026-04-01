@@ -160,6 +160,7 @@ export const API_ENDPOINTS = {
     BASE: '/dust',
     GET: (jobId: string) => `/dust/${jobId}`,
     STATUS: (jobId: string) => `/dust/${jobId}/status`,
+    DELETE: (jobId: string) => `/dust/${jobId}`,
     COMPLETED: '/dust/completed',
   },
 } as const;

@@ -394,6 +394,7 @@ function ProfileWidget() {
       CROWN: API_ENDPOINTS.CROWN.DELETE,
       CORRUGATION: API_ENDPOINTS.CORRUGATION.DELETE,
       POTHOLE: API_ENDPOINTS.POTHOLE.DELETE,
+      DUST: API_ENDPOINTS.DUST.DELETE,
     };
     const deleteFn = endpoints[type];
     if (!deleteFn) return;

@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import User, RutAnalysisJob, TiffFile
 from app.schemas import RutAnalysisCreate, RutAnalysisResponse, RutAnalysisStatusResponse
 from app.auth import get_current_active_user
+from app.config import settings
 from app.workers.rut_worker import analyze_ruts_task
 
 router = APIRouter(prefix="/rut", tags=["Rut Analysis"])
@@ -195,6 +196,16 @@ async def delete_rut_analysis(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Rut analysis job not found"
         )
+
+    # Delete S3 artifacts
+    import boto3, logging
+    s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+    for key in [job.html_plot_s3_key, job.pdf_plot_s3_key]:
+        if key:
+            try:
+                s3.delete_object(Bucket=settings.S3_BUCKET_RAW, Key=key)
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Failed to delete S3 object {key}: {e}")
 
     db.delete(job)
     db.commit()
