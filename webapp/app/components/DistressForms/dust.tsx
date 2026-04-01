@@ -61,10 +61,13 @@ export default function DustForm() {
   }, [selectedFolderId]);
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const [loadingFrame, setLoadingFrame] = useState(false);
+
   const selectVideo = async (v: VideoInfo) => {
-    setVideoId(v.id); setPolygonPoints([]); setIsDrawing(true); setIsStreaming(false); setStreamUrl(null); setFirstFrameUrl(null);
+    setVideoId(v.id); setPolygonPoints([]); setIsDrawing(true); setIsStreaming(false); setStreamUrl(null); setFirstFrameUrl(null); setLoadingFrame(true);
     try { const r = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(v.id)); if (r.ok) setFirstFrameUrl(URL.createObjectURL(await r.blob())); }
     catch { showToast("Failed to load frame"); }
+    finally { setLoadingFrame(false); }
   };
 
   const deleteVideo = async (id: string) => {
@@ -154,13 +157,15 @@ export default function DustForm() {
   };
 
   // Stream
+  const [streamLoading, setStreamLoading] = useState(false);
   const startStream = (m?: string) => {
     if (!videoId || polygonPoints.length !== 4) return;
+    setStreamLoading(true);
     setStreamUrl(`${API_URL}${API_ENDPOINTS.DUST.STREAM(videoId, polygonPoints, 1.0, m ?? selectedModel)}`);
     setIsStreaming(true);
   };
   const changeModel = (m: string) => { setSelectedModel(m); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(m), 50); } };
-  const stopStream = () => { setStreamUrl(null); setIsStreaming(false); };
+  const stopStream = () => { setStreamUrl(null); setIsStreaming(false); setStreamLoading(false); };
 
   return (
     <>
@@ -226,8 +231,16 @@ export default function DustForm() {
             </div>
             {uploading && <div className="w-full bg-slate-700 rounded-full h-1"><div className="bg-blue-500 h-1 transition-all" style={{ width: `${uploadProgress}%` }} /></div>}
 
+            {/* Loading first frame */}
+            {loadingFrame && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+                <span className="ml-2 text-slate-400 text-[12px]">Loading video frame...</span>
+              </div>
+            )}
+
             {/* Polygon drawing */}
-            {firstFrameUrl && (
+            {firstFrameUrl && !loadingFrame && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-[12px] text-slate-300">{isDrawing ? `Select detection region (${polygonPoints.length}/4)` : "Detection region set"}</span>
@@ -250,8 +263,14 @@ export default function DustForm() {
         {isStreaming && (
           <div className="space-y-2">
             <div className="relative">
+              {streamLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded z-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+                  <span className="ml-2 text-white text-[13px] font-medium">Loading detection stream...</span>
+                </div>
+              )}
               {streamUrl && (
-                <img src={streamUrl} alt="Detection" className="w-full rounded border border-slate-600" style={{ maxHeight: "55vh", objectFit: "contain", backgroundColor: "#000" }} />
+                <img src={streamUrl} alt="Detection" onLoad={() => setStreamLoading(false)} className="w-full rounded border border-slate-600" style={{ maxHeight: "55vh", objectFit: "contain", backgroundColor: "#000" }} />
               )}
               <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-red-600/90 px-1.5 py-0.5 rounded text-[9px] font-bold text-white">
                 <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" /> LIVE
