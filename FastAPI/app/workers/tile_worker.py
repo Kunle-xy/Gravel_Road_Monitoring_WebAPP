@@ -270,6 +270,60 @@ def _to_8bit_for_tiles(src_path: str, dst_path: str) -> None:
         raise
 
 
+def _expand_to_rgb(src_path: str, dst_path: str) -> None:
+    """
+    Expand single-band raster to 3-band RGB so gdal2tiles produces RGBA PNGs
+    instead of LA (grayscale+alpha) PNGs. Some browsers fail to render LA PNGs.
+    """
+    with rasterio.open(src_path) as ds:
+        if ds.count >= 3:
+            logger.info("Already 3+ bands, copying file")
+            import shutil
+            shutil.copy2(src_path, dst_path)
+            return
+
+    logger.info(f"Expanding single-band to RGB: {src_path} -> {dst_path}")
+    cmd = [
+        "gdal_translate",
+        "-of", "GTiff",
+        "-expand", "rgb",
+        "-co", "TILED=YES",
+        "-co", "COMPRESS=LZW",
+        "-co", "NUM_THREADS=ALL_CPUS",
+        src_path,
+        dst_path
+    ]
+
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        logger.info("RGB expansion completed")
+    except subprocess.CalledProcessError:
+        # -expand rgb only works on palette/colormapped rasters
+        # For plain grayscale, manually duplicate the band
+        logger.info("gdal_translate -expand failed, using VRT to triplicate band")
+        import shutil
+        vrt_path = src_path + ".rgb.vrt"
+        cmd_vrt = [
+            "gdalbuildvrt",
+            "-separate",
+            vrt_path,
+            src_path, src_path, src_path
+        ]
+        subprocess.run(cmd_vrt, capture_output=True, text=True, check=True)
+        cmd_translate = [
+            "gdal_translate",
+            "-of", "GTiff",
+            "-co", "TILED=YES",
+            "-co", "COMPRESS=LZW",
+            "-co", "NUM_THREADS=ALL_CPUS",
+            vrt_path,
+            dst_path
+        ]
+        subprocess.run(cmd_translate, capture_output=True, text=True, check=True)
+        os.remove(vrt_path)
+        logger.info("RGB expansion via VRT completed")
+
+
 def _xyz_with_gdal2tiles(cog_path: str, out_dir: str, min_zoom: int, max_zoom: int, file_type: str = "DEM") -> None:
     """
     Generate 256×256 XYZ tiles using gdal2tiles.py
@@ -425,28 +479,36 @@ def generate_tiles_task(self, file_id: str, s3_bucket: str, s3_key: str, min_zoo
             db.commit()
             _to_cog(local_src, local_cog)
 
-            # Step 3: Create 8-bit version for tiles (30-40%)
-            logger.info("[3/6] Scaling to 8-bit for tile generation")
+            # Step 3: Create 8-bit version for tiles (30-35%)
+            logger.info("[3/7] Scaling to 8-bit for tile generation")
             db_file.tile_progress = 30
             db.commit()
             _to_8bit_for_tiles(local_cog, local_8bit)
 
-            # Step 4: Calculate bounds (40-45%)
-            logger.info("[4/6] Calculating bounds")
+            # Step 4: Expand single-band to RGB (35-40%)
+            # Ensures gdal2tiles produces RGBA PNGs (not LA) for browser compatibility
+            local_rgb = os.path.join(tmp, "rgb.tif")
+            logger.info("[4/7] Expanding to RGB for browser compatibility")
+            db_file.tile_progress = 35
+            db.commit()
+            _expand_to_rgb(local_8bit, local_rgb)
+
+            # Step 5: Calculate bounds (40-45%)
+            logger.info("[5/7] Calculating bounds")
             db_file.tile_progress = 40
             db.commit()
             s, w, n, e = _bounds_wgs84(local_cog)
             logger.info(f"Bounds: S={s}, W={w}, N={n}, E={e}")
 
-            # Step 5: Generate XYZ tiles (45-75%)
-            logger.info("[5/6] Generating XYZ tiles")
+            # Step 6: Generate XYZ tiles (45-75%)
+            logger.info("[6/7] Generating XYZ tiles")
             db_file.tile_progress = 45
             db.commit()
             os.makedirs(tiles_dir, exist_ok=True)
-            _xyz_with_gdal2tiles(local_8bit, tiles_dir, min_zoom, max_zoom, db_file.file_type)
+            _xyz_with_gdal2tiles(local_rgb, tiles_dir, min_zoom, max_zoom, db_file.file_type)
 
-            # Step 6: Upload to S3 (75-100%)
-            logger.info("[6/6] Uploading tiles to S3")
+            # Step 7: Upload to S3 (75-100%)
+            logger.info("[7/7] Uploading tiles to S3")
             db_file.tile_progress = 75
             db.commit()
 
