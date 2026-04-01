@@ -412,7 +412,7 @@ export default function DustForm() {
 }
 
 /* Simple SVG pie chart — no external dependencies */
-function PieChart({ data, counts, total }: { data: Record<string, number>; counts: Record<string, number>; total: number }) {
+function PieChart({ data }: { data: Record<string, number>; counts: Record<string, number>; total: number }) {
   const colors: Record<string, string> = { "High Dust": "#ef4444", "Low Dust": "#eab308", "Non Dust": "#22c55e" };
   const entries = Object.entries(data).filter(([, v]) => v > 0);
 
@@ -421,40 +421,45 @@ function PieChart({ data, counts, total }: { data: Record<string, number>; count
   }
 
   const size = 200;
-  const cx = size / 2, cy = size / 2, r = 80;
-  let cumAngle = -Math.PI / 2;
+  const center = size / 2;
+  const r = 80;
 
-  const slices = entries.map(([label, pct]) => {
-    const angle = (pct / 100) * 2 * Math.PI;
-    const startX = cx + r * Math.cos(cumAngle);
-    const startY = cy + r * Math.sin(cumAngle);
-    cumAngle += angle;
-    const endX = cx + r * Math.cos(cumAngle);
-    const endY = cy + r * Math.sin(cumAngle);
-    const large = angle > Math.PI ? 1 : 0;
-    const d = `M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${large} 1 ${endX} ${endY} Z`;
-
-    // Label position
-    const midAngle = cumAngle - angle / 2;
-    const labelR = r * 0.6;
-    const lx = cx + labelR * Math.cos(midAngle);
-    const ly = cy + labelR * Math.sin(midAngle);
-
-    return { label, pct, d, color: colors[label] || "#888", lx, ly };
-  });
+  // Pre-compute all angles without mutation in map
+  const angles: number[] = [];
+  let running = -Math.PI / 2;
+  for (const [, pct] of entries) {
+    angles.push(running);
+    running += (pct / 100) * 2 * Math.PI;
+  }
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {slices.map((s) => (
-        <g key={s.label}>
-          <path d={s.d} fill={s.color} stroke="#1e293b" strokeWidth="2" />
-          {s.pct > 8 && (
-            <text x={s.lx} y={s.ly} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="12" fontWeight="bold">
-              {s.pct}%
-            </text>
-          )}
-        </g>
-      ))}
+      {entries.map(([label, pct], i) => {
+        const startAngle = angles[i];
+        const angle = (pct / 100) * 2 * Math.PI;
+        const endAngle = startAngle + angle;
+        const startX = center + r * Math.cos(startAngle);
+        const startY = center + r * Math.sin(startAngle);
+        const endX = center + r * Math.cos(endAngle);
+        const endY = center + r * Math.sin(endAngle);
+        const large = angle > Math.PI ? 1 : 0;
+        const d = `M ${center} ${center} L ${startX} ${startY} A ${r} ${r} 0 ${large} 1 ${endX} ${endY} Z`;
+        const midAngle = startAngle + angle / 2;
+        const lx = center + r * 0.6 * Math.cos(midAngle);
+        const ly = center + r * 0.6 * Math.sin(midAngle);
+        const color = colors[label] || "#888";
+
+        return (
+          <g key={label}>
+            <path d={d} fill={color} stroke="#1e293b" strokeWidth="2" />
+            {pct > 8 && (
+              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="12" fontWeight="bold">
+                {pct}%
+              </text>
+            )}
+          </g>
+        );
+      })}
     </svg>
   );
 }
