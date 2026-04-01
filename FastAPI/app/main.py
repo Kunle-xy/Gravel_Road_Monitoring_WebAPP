@@ -7,7 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.database import engine, Base
 from app.routers import auth, files, upload, tiles_status, folders, rut_analysis, crown_analysis, corrugation_analysis, dust_analysis, pothole_analysis
- import logging
+import logging
 
 # Configure logging
 logging.basicConfig(
