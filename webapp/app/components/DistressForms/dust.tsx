@@ -65,6 +65,7 @@ export default function DustForm() {
 
   const selectVideo = async (v: VideoInfo) => {
     setVideoId(v.id); setPolygonPoints([]); setIsDrawing(true); setIsStreaming(false); setStreamUrl(null); setFirstFrameUrl(null); setLoadingFrame(true);
+    setAnalysisResults(null); setShowResults(false); setAnalysisError(null); setIsAnalyzing(false);
     try { const r = await fetchWithAuth(API_ENDPOINTS.DUST.FIRST_FRAME(v.id)); if (r.ok) setFirstFrameUrl(URL.createObjectURL(await r.blob())); }
     catch { showToast("Failed to load frame"); }
     finally { setLoadingFrame(false); }

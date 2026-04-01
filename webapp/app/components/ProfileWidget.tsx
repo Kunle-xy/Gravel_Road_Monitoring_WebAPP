@@ -48,24 +48,38 @@ interface Folder {
 
 interface CompletedJob {
   id: string;
-  tiff_file_id: string;
-  html_plot_url: string;
-  pdf_plot_url: string;
+  tiff_file_id?: string;
+  video_file_id?: string;
+  html_plot_url?: string;
+  pdf_plot_url?: string;
   completed_at: string;
-  total_ruts_detected: number;
-  total_area_sqft: number;
+  total_ruts_detected?: number;
+  total_area_sqft?: number;
   dy_freq?: number;
   dx?: number;
   apply_smoothing?: boolean;
   gaussian_sigma?: number;
   polygon_geojson?: any;
+  results_json?: any;
+  // pothole
+  depth_inches?: number;
+  width_feet?: number;
+  severity?: string;
+}
+
+interface GroupedJobs {
+  rut: CompletedJob[];
+  crown: CompletedJob[];
+  corrugation: CompletedJob[];
+  pothole: CompletedJob[];
+  dust: CompletedJob[];
 }
 
 function ProfileWidget() {
   const [open, setOpen] = useState(true);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [uncategorizedFiles, setUncategorizedFiles] = useState<TiffFile[]>([]);
-  const [completedJobs, setCompletedJobs] = useState<CompletedJob[]>([]);
+  const [completedJobs, setCompletedJobs] = useState<GroupedJobs>({ rut: [], crown: [], corrugation: [], pothole: [], dust: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,16 +131,26 @@ function ProfileWidget() {
     }
   }, [isResizing, handleResizeMove, handleResizeEnd]);
 
-  // Fetch completed rut analysis jobs
+  // Fetch completed jobs for all distress types
   const fetchCompletedJobs = useCallback(async () => {
     if (!isAuthenticated) return;
 
     try {
-      const response = await fetchWithAuth(API_ENDPOINTS.RUT.COMPLETED);
-      if (response.ok) {
-        const data = await response.json();
-        setCompletedJobs(data);
-      }
+      const [rutRes, crownRes, corrRes, potholeRes, dustRes] = await Promise.all([
+        fetchWithAuth(API_ENDPOINTS.RUT.COMPLETED).catch(() => null),
+        fetchWithAuth(API_ENDPOINTS.CROWN.COMPLETED).catch(() => null),
+        fetchWithAuth(API_ENDPOINTS.CORRUGATION.COMPLETED).catch(() => null),
+        fetchWithAuth(API_ENDPOINTS.POTHOLE.COMPLETED).catch(() => null),
+        fetchWithAuth(API_ENDPOINTS.DUST.COMPLETED).catch(() => null),
+      ]);
+
+      setCompletedJobs({
+        rut: rutRes?.ok ? await rutRes.json() : [],
+        crown: crownRes?.ok ? await crownRes.json() : [],
+        corrugation: corrRes?.ok ? await corrRes.json() : [],
+        pothole: potholeRes?.ok ? await potholeRes.json() : [],
+        dust: dustRes?.ok ? await dustRes.json() : [],
+      });
     } catch (error) {
       console.error('Failed to fetch completed jobs:', error);
     }
@@ -252,13 +276,22 @@ function ProfileWidget() {
   };
 
   // Delete job handler
-  const handleDeleteJob = async (jobId: string, completedDate: string) => {
-    if (!confirm(`Are you sure you want to delete the rut analysis job from ${new Date(completedDate).toLocaleDateString()}?`)) {
+  const handleDeleteJob = async (jobId: string, completedDate: string, type: keyof typeof API_ENDPOINTS = 'RUT') => {
+    if (!confirm(`Are you sure you want to delete this ${type.toLowerCase()} analysis job from ${new Date(completedDate).toLocaleDateString()}?`)) {
       return;
     }
 
+    const endpoints: Record<string, (id: string) => string> = {
+      RUT: API_ENDPOINTS.RUT.DELETE,
+      CROWN: API_ENDPOINTS.CROWN.DELETE,
+      CORRUGATION: API_ENDPOINTS.CORRUGATION.DELETE,
+      POTHOLE: API_ENDPOINTS.POTHOLE.DELETE,
+    };
+    const deleteFn = endpoints[type];
+    if (!deleteFn) return;
+
     try {
-      const response = await fetchWithAuth(API_ENDPOINTS.RUT.DELETE(jobId), {
+      const response = await fetchWithAuth(deleteFn(jobId), {
         method: 'DELETE',
       });
 
@@ -436,91 +469,101 @@ function ProfileWidget() {
           </div>
         ) : (
           <>
-            {/* Completed Jobs Section */}
-            {completedJobs.length > 0 && (
-              <div className="mb-4">
-                <div className="text-xs uppercase tracking-wide text-slate-400 mb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-3 w-3" />
-                    <span>Completed Jobs ({completedJobs.length})</span>
+            {/* Completed Jobs Section — grouped by distress type */}
+            {(() => {
+              const totalJobs = Object.values(completedJobs).reduce((s, a) => s + a.length, 0);
+              if (totalJobs === 0) return null;
+
+              const groups: { key: keyof GroupedJobs; label: string; apiKey: string; color: string }[] = [
+                { key: 'rut', label: 'Rut', apiKey: 'RUT', color: 'text-orange-400' },
+                { key: 'crown', label: 'Crown', apiKey: 'CROWN', color: 'text-blue-400' },
+                { key: 'corrugation', label: 'Corrugation', apiKey: 'CORRUGATION', color: 'text-purple-400' },
+                { key: 'pothole', label: 'Pothole', apiKey: 'POTHOLE', color: 'text-red-400' },
+                { key: 'dust', label: 'Dust', apiKey: 'DUST', color: 'text-yellow-400' },
+              ];
+
+              return (
+                <div className="mb-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-400 mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3 w-3" />
+                      <span>Completed Jobs ({totalJobs})</span>
+                    </div>
+                    {open && (
+                      <button
+                        onClick={() => setShowCompletedJobs(!showCompletedJobs)}
+                        className="p-1 hover:bg-white/10 rounded transition-colors"
+                        title={showCompletedJobs ? "Hide" : "Show"}
+                      >
+                        {showCompletedJobs ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </button>
+                    )}
                   </div>
-                  {open && (
-                    <button
-                      onClick={() => setShowCompletedJobs(!showCompletedJobs)}
-                      className="p-1 hover:bg-white/10 rounded transition-colors"
-                      title={showCompletedJobs ? "Hide completed jobs" : "Show completed jobs"}
-                    >
-                      {showCompletedJobs ? (
-                        <ChevronUp className="h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3" />
-                      )}
-                    </button>
+                  {showCompletedJobs && (
+                    <div className="space-y-3">
+                      {groups.map(({ key, label, apiKey, color }) => {
+                        const jobs = completedJobs[key];
+                        if (jobs.length === 0) return null;
+                        return (
+                          <div key={key}>
+                            <div className={`text-[10px] font-semibold mb-1 ${color}`}>{label} ({jobs.length})</div>
+                            <div className="space-y-1.5">
+                              {jobs.map((job) => (
+                                <div key={job.id} className="bg-green-900/20 border border-green-700/30 rounded-lg p-2 text-xs">
+                                  <div className="text-slate-300 mb-1 flex items-center justify-between gap-1">
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-medium">{new Date(job.completed_at).toLocaleDateString()}</span>
+                                      {/* Type-specific summary */}
+                                      {key === 'rut' && job.total_ruts_detected != null && (
+                                        <><span className="text-slate-500">•</span><span className="text-green-400">{job.total_ruts_detected} ruts</span></>
+                                      )}
+                                      {key === 'pothole' && job.severity && (
+                                        <><span className="text-slate-500">•</span><span className="text-green-400">{job.severity}</span></>
+                                      )}
+                                      {key === 'dust' && job.results_json?.percentages && (
+                                        <><span className="text-slate-500">•</span><span className="text-green-400">H:{job.results_json.percentages["High Dust"] ?? 0}% L:{job.results_json.percentages["Low Dust"] ?? 0}%</span></>
+                                      )}
+                                    </div>
+                                    <button
+                                      onClick={() => handleDeleteJob(job.id, job.completed_at, apiKey as any)}
+                                      className="p-1 hover:bg-red-600/30 rounded transition-colors opacity-0 group-hover:opacity-100"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-400" />
+                                    </button>
+                                  </div>
+                                  {/* Action buttons — show Plot/PDF if available */}
+                                  {(job.html_plot_url || job.pdf_plot_url) && (
+                                    <div className="flex gap-1.5">
+                                      {job.html_plot_url && (
+                                        <button
+                                          onClick={() => window.open(job.html_plot_url!, '_blank', 'noopener,noreferrer')}
+                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[10px] transition-colors cursor-pointer"
+                                        >
+                                          <ExternalLink className="h-3 w-3" /><span>Plot</span>
+                                        </button>
+                                      )}
+                                      {job.pdf_plot_url && (
+                                        <button
+                                          onClick={() => window.open(job.pdf_plot_url!, '_blank', 'noopener,noreferrer')}
+                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[10px] transition-colors cursor-pointer"
+                                        >
+                                          <Download className="h-3 w-3" /><span>PDF</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-                {showCompletedJobs && (
-                  <div className="space-y-2">
-                    {completedJobs.map((job) => {
-                      const demFilename = getDemFilename(job.tiff_file_id);
-                      const tooltipContent = `DEM: ${demFilename}\nSampling: ${job.dy_freq || 3} per 100px\nRutting Width: ${job.dx || 0.1}m\nSmoothing: ${job.apply_smoothing ? `Yes (σ=${job.gaussian_sigma || 1.0})` : 'No'}`;
-
-                      return (
-                        <div
-                          key={job.id}
-                          className="bg-green-900/20 border border-green-700/30 rounded-lg p-2 text-xs"
-                        >
-                          <div className="text-slate-300 mb-1 flex items-center justify-between gap-1">
-                            <div className="flex items-center gap-1">
-                              <span className="font-medium">
-                                {new Date(job.completed_at).toLocaleDateString()}
-                              </span>
-                              <div className="group relative">
-                                <Info className="h-3 w-3 text-slate-400 hover:text-blue-400 cursor-help transition-colors" />
-                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-48 bg-slate-900 border border-slate-700 rounded-lg p-2 text-[10px] shadow-xl">
-                                  <div className="space-y-1 whitespace-pre-line">
-                                    <div><span className="text-slate-400">DEM:</span> <span className="text-slate-200">{demFilename}</span></div>
-                                    <div><span className="text-slate-400">Sampling:</span> <span className="text-slate-200">{job.dy_freq || 3} per 100px</span></div>
-                                    <div><span className="text-slate-400">Width:</span> <span className="text-slate-200">{job.dx || 0.1}m</span></div>
-                                    <div><span className="text-slate-400">Smoothing:</span> <span className="text-slate-200">{job.apply_smoothing ? `Yes (σ=${job.gaussian_sigma || 1.0})` : 'No'}</span></div>
-                                  </div>
-                                </div>
-                              </div>
-                              <span className="text-slate-500">•</span>
-                              <span className="text-green-400">{job.total_ruts_detected} ruts</span>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteJob(job.id, job.completed_at)}
-                              className="p-1 hover:bg-red-600/30 rounded transition-colors"
-                              title="Delete this job"
-                            >
-                              <Trash2 className="h-3 w-3 text-red-400 hover:text-red-300" />
-                            </button>
-                          </div>
-                          <div className="flex gap-1.5">
-                            <button
-                              onClick={() => window.open(job.html_plot_url, '_blank', 'noopener,noreferrer')}
-                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[10px] transition-colors cursor-pointer"
-                              title="View interactive plot"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              <span>Plot</span>
-                            </button>
-                            <button
-                              onClick={() => window.open(job.pdf_plot_url, '_blank', 'noopener,noreferrer')}
-                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[10px] transition-colors cursor-pointer"
-                              title="View PDF report"
-                            >
-                              <Download className="h-3 w-3" />
-                              <span>PDF</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* Folders Section */}
             {folders.length > 0 && (

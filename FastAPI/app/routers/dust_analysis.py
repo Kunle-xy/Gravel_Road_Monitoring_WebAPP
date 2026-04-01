@@ -254,6 +254,18 @@ def stream_detection(
 
 # --- Dust Analysis Job Endpoints ---
 
+@router.get("/completed", response_model=list[DustAnalysisResponse])
+def get_completed_dust_analyses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all completed dust analysis jobs for the current user."""
+    return db.query(DustAnalysisJob).filter(
+        DustAnalysisJob.user_id == current_user.id,
+        DustAnalysisJob.status == "completed",
+    ).order_by(DustAnalysisJob.completed_at.desc()).all()
+
+
 @router.post("", response_model=DustAnalysisResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=DustAnalysisResponse, status_code=status.HTTP_201_CREATED)
 def create_dust_analysis(

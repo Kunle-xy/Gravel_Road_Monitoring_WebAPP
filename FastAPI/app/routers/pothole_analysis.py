@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pothole", tags=["Pothole Analysis"])
 
 
+@router.get("/completed", response_model=list[PotholeAnalysisResponse])
+def get_completed_pothole_analyses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all completed pothole analysis jobs for the current user."""
+    return db.query(PotholeAnalysisJob).filter(
+        PotholeAnalysisJob.user_id == current_user.id,
+        PotholeAnalysisJob.status == "completed",
+    ).order_by(PotholeAnalysisJob.completed_at.desc()).all()
+
+
 @router.post("", response_model=PotholeAnalysisResponse, status_code=201)
 @router.post("/", response_model=PotholeAnalysisResponse, status_code=201)
 def create_pothole_analysis(

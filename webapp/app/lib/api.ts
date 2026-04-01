@@ -146,6 +146,7 @@ export const API_ENDPOINTS = {
     GET: (jobId: string) => `/pothole/${jobId}`,
     STATUS: (jobId: string) => `/pothole/${jobId}/status`,
     DELETE: (jobId: string) => `/pothole/${jobId}`,
+    COMPLETED: '/pothole/completed',
   },
   DUST: {
     VIDEOS: '/dust/videos',
@@ -159,5 +160,6 @@ export const API_ENDPOINTS = {
     BASE: '/dust',
     GET: (jobId: string) => `/dust/${jobId}`,
     STATUS: (jobId: string) => `/dust/${jobId}/status`,
+    COMPLETED: '/dust/completed',
   },
 } as const;
