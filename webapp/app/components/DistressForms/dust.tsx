@@ -448,6 +448,20 @@ function PieChart({ data }: { data: Record<string, number>; counts: Record<strin
     running += (pct / 100) * 2 * Math.PI;
   }
 
+  // Single class = 100% — draw a full circle instead of an arc
+  if (entries.length === 1) {
+    const [label, pct] = entries[0];
+    const color = colors[label] || "#888";
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={center} cy={center} r={r} fill={color} stroke="#1e293b" strokeWidth="2" />
+        <text x={center} y={center} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="14" fontWeight="bold">
+          {pct}%
+        </text>
+      </svg>
+    );
+  }
+
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {entries.map(([label, pct], i) => {
