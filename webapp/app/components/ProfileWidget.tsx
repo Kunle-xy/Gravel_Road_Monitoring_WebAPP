@@ -52,6 +52,7 @@ interface CompletedJob {
   video_file_id?: string;
   html_plot_url?: string;
   pdf_plot_url?: string;
+  html_report_url?: string;
   completed_at: string;
   total_ruts_detected?: number;
   total_area_sqft?: number;
@@ -148,13 +149,13 @@ function JobGroup({ groupKey, label, apiKey, color, jobs, onDelete, getDemFilena
                       </div>
                     )}
                     {/* Action buttons */}
-                    <div className="flex gap-1.5">
-                      {job.html_plot_url && (
+                    <div className="flex gap-1.5 flex-wrap">
+                      {(job.html_plot_url || job.html_report_url) && (
                         <button
-                          onClick={() => window.open(job.html_plot_url!, '_blank', 'noopener,noreferrer')}
+                          onClick={() => window.open((job.html_plot_url || job.html_report_url)!, '_blank', 'noopener,noreferrer')}
                           className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[9px] transition-colors cursor-pointer text-slate-200"
                         >
-                          <ExternalLink className="h-2.5 w-2.5" /> Plot
+                          <ExternalLink className="h-2.5 w-2.5" /> Report
                         </button>
                       )}
                       {job.pdf_plot_url && (
@@ -521,23 +522,20 @@ function ProfileWidget() {
                 const res = await fetchWithAuth(API_ENDPOINTS.AUTH.PROFILE_PICTURE, { method: 'POST' });
                 if (!res.ok) throw new Error('Failed to get upload URL');
                 const { presigned_url } = await res.json();
-                // Convert to JPEG blob for consistency
-                const canvas = document.createElement('canvas');
-                const img = new Image();
-                img.src = URL.createObjectURL(file);
-                await new Promise(r => { img.onload = r; });
-                const size = Math.min(img.width, img.height, 512);
-                canvas.width = size; canvas.height = size;
-                const ctx = canvas.getContext('2d')!;
-                const sx = (img.width - size) / 2, sy = (img.height - size) / 2;
-                ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
-                const blob = await new Promise<Blob>((resolve) => canvas.toBlob(b => resolve(b!), 'image/jpeg', 0.85));
-                // Upload to S3
-                await fetch(presigned_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+                // Upload directly to S3 via XHR (avoids CORS issues with fetch)
+                await new Promise<void>((resolve, reject) => {
+                  const xhr = new XMLHttpRequest();
+                  xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+                  xhr.onerror = () => reject(new Error('Upload failed'));
+                  xhr.open('PUT', presigned_url);
+                  xhr.setRequestHeader('Content-Type', 'image/jpeg');
+                  xhr.send(file);
+                });
                 // Refresh user data to get new URL
                 if (refreshUser) await refreshUser();
               } catch (err) {
                 alert('Failed to upload profile picture');
+                console.error(err);
               }
               e.target.value = '';
             }}
