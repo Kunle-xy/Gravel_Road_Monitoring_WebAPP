@@ -250,3 +250,71 @@ def stream_detection(
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# --- Dust Analysis Job Endpoints ---
+
+@router.post("", response_model=DustAnalysisResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=DustAnalysisResponse, status_code=status.HTTP_201_CREATED)
+def create_dust_analysis(
+    body: DustAnalysisCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Submit a dust analysis job. Runs YOLO + ResNet classification via Celery."""
+    from app.workers.dust.task import analyze_dust_task
+
+    video = db.query(VideoFile).filter(
+        VideoFile.id == body.video_file_id,
+        VideoFile.user_id == current_user.id,
+    ).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    job = DustAnalysisJob(
+        user_id=current_user.id,
+        video_file_id=body.video_file_id,
+        polygon_points=body.polygon_points,
+        status="pending",
+        progress=0,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    task = analyze_dust_task.delay(str(job.id))
+    job.celery_task_id = task.id
+    db.commit()
+    db.refresh(job)
+
+    return job
+
+
+@router.get("/{job_id}", response_model=DustAnalysisResponse)
+def get_dust_analysis(
+    job_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    job = db.query(DustAnalysisJob).filter(
+        DustAnalysisJob.id == job_id,
+        DustAnalysisJob.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/{job_id}/status", response_model=DustAnalysisStatusResponse)
+def get_dust_analysis_status(
+    job_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    job = db.query(DustAnalysisJob).filter(
+        DustAnalysisJob.id == job_id,
+        DustAnalysisJob.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job

@@ -167,6 +167,55 @@ export default function DustForm() {
   const changeModel = (m: string) => { setSelectedModel(m); if (isStreaming) { setStreamUrl(null); setTimeout(() => startStream(m), 50); } };
   const stopStream = () => { setStreamUrl(null); setIsStreaming(false); setStreamLoading(false); };
 
+  // Analysis job
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisResults, setAnalysisResults] = useState<{ counts: Record<string, number>; percentages: Record<string, number>; total_classified: number } | null>(null);
+  const [showResults, setShowResults] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startAnalysis = async () => {
+    if (!videoId || polygonPoints.length !== 4) return;
+    setIsAnalyzing(true); setAnalysisProgress(0); setAnalysisResults(null); setAnalysisError(null);
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.DUST.BASE, {
+        method: "POST",
+        body: JSON.stringify({ video_file_id: videoId, polygon_points: polygonPoints }),
+      });
+      if (!res.ok) throw new Error("Failed to start analysis");
+      const job = await res.json();
+      const jobId = job.id;
+
+      pollingRef.current = setInterval(async () => {
+        try {
+          const s = await fetchWithAuth(API_ENDPOINTS.DUST.STATUS(jobId));
+          if (!s.ok) return;
+          const data = await s.json();
+          setAnalysisProgress(data.progress);
+
+          if (data.status === "completed") {
+            clearInterval(pollingRef.current!);
+            pollingRef.current = null;
+            setAnalysisResults(data.results_json);
+            setIsAnalyzing(false);
+            showToast("Analysis complete!", "success");
+          } else if (data.status === "failed") {
+            clearInterval(pollingRef.current!);
+            pollingRef.current = null;
+            setAnalysisError(data.error_message || "Analysis failed");
+            setIsAnalyzing(false);
+          }
+        } catch {}
+      }, 2000);
+    } catch (e) {
+      setIsAnalyzing(false);
+      showToast(e instanceof Error ? e.message : "Failed to start analysis");
+    }
+  };
+
+  useEffect(() => { return () => { if (pollingRef.current) clearInterval(pollingRef.current); }; }, []);
+
   return (
     <>
       <ToastContainer toasts={toasts} />
@@ -176,7 +225,7 @@ export default function DustForm() {
         </h2>
 
         {/* === SETUP === */}
-        {!isStreaming && (
+        {!isStreaming && !showResults && (
           <div className="space-y-2">
             {/* Row 1: Video select + Model + Project */}
             <div className="flex gap-1.5 items-end">
@@ -250,10 +299,42 @@ export default function DustForm() {
               </div>
             )}
 
-            {/* Start */}
-            {videoId && polygonPoints.length === 4 && (
-              <button onClick={() => startStream()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-700 text-white rounded-lg text-[13px] font-bold hover:bg-red-800 shadow-lg">
-                <Play size={16} /> Run Detection
+            {/* Start buttons */}
+            {videoId && polygonPoints.length === 4 && !isAnalyzing && (
+              <div className="flex gap-2">
+                <button onClick={() => startStream()} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-700 text-white rounded-lg text-[13px] font-bold hover:bg-red-800 shadow-lg">
+                  <Play size={16} /> Live Preview
+                </button>
+                <button onClick={startAnalysis} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-700 text-white rounded-lg text-[13px] font-bold hover:bg-blue-800 shadow-lg">
+                  <Play size={16} /> Run Analysis
+                </button>
+              </div>
+            )}
+
+            {/* Analysis progress */}
+            {isAnalyzing && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                  <span className="text-[12px] text-slate-300">Analyzing video... {analysisProgress}%</span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${analysisProgress}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* Analysis error */}
+            {analysisError && (
+              <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 text-[12px] text-red-300">
+                {analysisError}
+              </div>
+            )}
+
+            {/* Results ready — show button */}
+            {analysisResults && !showResults && (
+              <button onClick={() => setShowResults(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-700 text-white rounded-lg text-[13px] font-bold hover:bg-green-800 shadow-lg">
+                View Results
               </button>
             )}
           </div>
@@ -288,7 +369,92 @@ export default function DustForm() {
             </div>
           </div>
         )}
+        {/* === RESULTS VIEW === */}
+        {showResults && analysisResults && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[14px] font-bold text-slate-200">Dust Analysis Results</h3>
+              <button onClick={() => setShowResults(false)} className="text-[11px] text-blue-400 hover:text-blue-300">Back to setup</button>
+            </div>
+
+            {/* Pie chart */}
+            <div className="flex justify-center">
+              <PieChart data={analysisResults.percentages} counts={analysisResults.counts} total={analysisResults.total_classified} />
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-2">
+                <div className="text-[18px] font-bold text-red-400">{analysisResults.percentages["High Dust"]}%</div>
+                <div className="text-[10px] text-slate-400">High Dust</div>
+                <div className="text-[10px] text-slate-500">{analysisResults.counts["High Dust"]} frames</div>
+              </div>
+              <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-2">
+                <div className="text-[18px] font-bold text-yellow-400">{analysisResults.percentages["Low Dust"]}%</div>
+                <div className="text-[10px] text-slate-400">Low Dust</div>
+                <div className="text-[10px] text-slate-500">{analysisResults.counts["Low Dust"]} frames</div>
+              </div>
+              <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-2">
+                <div className="text-[18px] font-bold text-green-400">{analysisResults.percentages["Non Dust"]}%</div>
+                <div className="text-[10px] text-slate-400">Non Dust</div>
+                <div className="text-[10px] text-slate-500">{analysisResults.counts["Non Dust"]} frames</div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-500 text-center">
+              Total classified frames: {analysisResults.total_classified}
+            </div>
+          </div>
+        )}
       </div>
     </>
+  );
+}
+
+/* Simple SVG pie chart — no external dependencies */
+function PieChart({ data, counts, total }: { data: Record<string, number>; counts: Record<string, number>; total: number }) {
+  const colors: Record<string, string> = { "High Dust": "#ef4444", "Low Dust": "#eab308", "Non Dust": "#22c55e" };
+  const entries = Object.entries(data).filter(([, v]) => v > 0);
+
+  if (entries.length === 0) {
+    return <div className="text-slate-500 text-[12px] py-4">No classified frames</div>;
+  }
+
+  const size = 200;
+  const cx = size / 2, cy = size / 2, r = 80;
+  let cumAngle = -Math.PI / 2;
+
+  const slices = entries.map(([label, pct]) => {
+    const angle = (pct / 100) * 2 * Math.PI;
+    const startX = cx + r * Math.cos(cumAngle);
+    const startY = cy + r * Math.sin(cumAngle);
+    cumAngle += angle;
+    const endX = cx + r * Math.cos(cumAngle);
+    const endY = cy + r * Math.sin(cumAngle);
+    const large = angle > Math.PI ? 1 : 0;
+    const d = `M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${large} 1 ${endX} ${endY} Z`;
+
+    // Label position
+    const midAngle = cumAngle - angle / 2;
+    const labelR = r * 0.6;
+    const lx = cx + labelR * Math.cos(midAngle);
+    const ly = cy + labelR * Math.sin(midAngle);
+
+    return { label, pct, d, color: colors[label] || "#888", lx, ly };
+  });
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {slices.map((s) => (
+        <g key={s.label}>
+          <path d={s.d} fill={s.color} stroke="#1e293b" strokeWidth="2" />
+          {s.pct > 8 && (
+            <text x={s.lx} y={s.ly} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize="12" fontWeight="bold">
+              {s.pct}%
+            </text>
+          )}
+        </g>
+      ))}
+    </svg>
   );
 }

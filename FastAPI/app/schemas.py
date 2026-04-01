@@ -451,6 +451,7 @@ class DustAnalysisResponse(BaseModel):
     status: str
     progress: int
     error_message: Optional[str] = None
+    results_json: Optional[dict] = None
     total_frames: int
     truck_frames: int
     no_truck_frames: int
@@ -465,6 +466,7 @@ class DustAnalysisStatusResponse(BaseModel):
     status: str
     progress: int
     error_message: Optional[str] = None
+    results_json: Optional[dict] = None
     total_frames: int
     truck_frames: int
     no_truck_frames: int
