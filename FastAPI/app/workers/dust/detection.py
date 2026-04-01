@@ -16,7 +16,7 @@ _dust_model = None
 MODEL_FILE = "yolo26l.pt"
 MODEL_LABEL = "YOLO26"
 
-DUST_MODEL_PATH = os.path.join(os.path.dirname(__file__), "trial_0_best.pt")
+DUST_MODEL_PATH = os.path.join(os.path.dirname(__file__), "best_model_final.pt")
 DUST_CLASSES = ["High Dust", "Low Dust", "Non Dust"]
 VEHICLE_CLASSES = {"car", "truck", "bus"}
 TARGET = 224
