@@ -78,7 +78,7 @@ def analyze_dust_task(self, job_id: str):
 
         # Tracking state
         road_encroached = False
-        counts = {"High Dust": 0, "Low Dust": 0, "Non Dust": 0}
+        counts = {"High Dust": 0, "Low Dust": 0, "No Dust": 0}
         truck_frames = 0
         no_truck_frames = 0
         frame_idx = 0
@@ -155,7 +155,7 @@ def analyze_dust_task(self, job_id: str):
         if total_classified > 0:
             percentages = {k: round(v / total_classified * 100, 1) for k, v in counts.items()}
         else:
-            percentages = {"High Dust": 0, "Low Dust": 0, "Non Dust": 0}
+            percentages = {"High Dust": 0, "Low Dust": 0, "No Dust": 0}
 
         job.status = "completed"
         job.progress = 100

@@ -376,10 +376,10 @@ export default function DustForm() {
           const total = analysisResults.total_classified || 0;
           const high = pct["High Dust"] ?? 0;
           const low = pct["Low Dust"] ?? 0;
-          const none = pct["Non Dust"] ?? 0;
+          const none = pct["No Dust"] ?? 0;
           const highN = cnt["High Dust"] ?? 0;
           const lowN = cnt["Low Dust"] ?? 0;
-          const noneN = cnt["Non Dust"] ?? 0;
+          const noneN = cnt["No Dust"] ?? 0;
 
           return (
             <div className="space-y-3">
@@ -429,7 +429,7 @@ export default function DustForm() {
 
 /* Simple SVG pie chart — no external dependencies */
 function PieChart({ data }: { data: Record<string, number>; counts: Record<string, number>; total: number }) {
-  const colors: Record<string, string> = { "High Dust": "#ef4444", "Low Dust": "#eab308", "Non Dust": "#22c55e" };
+  const colors: Record<string, string> = { "High Dust": "#ef4444", "Low Dust": "#eab308", "No Dust": "#22c55e" };
   const entries = Object.entries(data).filter(([, v]) => v > 0);
 
   if (entries.length === 0) {
