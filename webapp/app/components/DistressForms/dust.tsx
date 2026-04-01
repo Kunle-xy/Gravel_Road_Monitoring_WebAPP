@@ -296,7 +296,7 @@ export default function DustForm() {
                   <span className="font-semibold text-[12px] text-slate-300">{isDrawing ? `Select detection region (${polygonPoints.length}/4)` : "Detection region set"}</span>
                   {polygonPoints.length > 0 && <button onClick={() => { setPolygonPoints([]); setIsDrawing(true); }} className="text-red-400 hover:text-red-300">Reset</button>}
                 </div>
-                <canvas ref={canvasRef} onClick={handleCanvasClick} className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : ""}`} style={{ maxHeight: "280px" }} />
+                <canvas ref={canvasRef} onClick={handleCanvasClick} className={`w-full rounded border border-slate-600 ${isDrawing ? "cursor-crosshair" : ""}`} style={{ maxHeight: "450px" }} />
               </div>
             )}
 
