@@ -214,3 +214,61 @@ def resend_verification(request: Request, user_data: EmailOnly, db: Session = De
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
+
+
+@router.post("/profile-picture")
+def upload_profile_picture(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get a presigned URL to upload a profile picture."""
+    import boto3
+    s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+    s3_key = f"profile-pictures/{current_user.id}.jpg"
+
+    presigned_url = s3.generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.S3_BUCKET_NAME,
+            "Key": s3_key,
+            "ContentType": "image/jpeg",
+        },
+        ExpiresIn=300,
+    )
+
+    # Build the public CloudFront URL
+    picture_url = f"https://{settings.AWS_CLOUDFRONT_DOMAIN}/{s3_key}"
+
+    # Save to user record
+    # Delete old S3 object if key changed
+    if current_user.profile_picture_s3_key and current_user.profile_picture_s3_key != s3_key:
+        try:
+            s3.delete_object(Bucket=settings.S3_BUCKET_NAME, Key=current_user.profile_picture_s3_key)
+        except Exception:
+            pass
+
+    current_user.profile_picture_s3_key = s3_key
+    current_user.profile_picture_url = picture_url
+    db.commit()
+
+    return {"presigned_url": presigned_url, "picture_url": picture_url}
+
+
+@router.delete("/profile-picture", status_code=204)
+def delete_profile_picture(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Remove the user's profile picture."""
+    if current_user.profile_picture_s3_key:
+        import boto3
+        s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+        try:
+            s3.delete_object(Bucket=settings.S3_BUCKET_NAME, Key=current_user.profile_picture_s3_key)
+        except Exception:
+            pass
+
+    current_user.profile_picture_s3_key = None
+    current_user.profile_picture_url = None
+    db.commit()

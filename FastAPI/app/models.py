@@ -21,6 +21,8 @@ class User(Base):
     last_login = Column(DateTime(timezone=True))
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime(timezone=True))
+    profile_picture_s3_key = Column(String(500))
+    profile_picture_url = Column(String(1000))
 
     tiff_files = relationship("TiffFile", back_populates="user")
     folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan")

@@ -92,6 +92,7 @@ export const API_ENDPOINTS = {
     ME: '/auth/me',
     REFRESH: '/auth/refresh',
     LOGOUT: '/auth/logout',
+    PROFILE_PICTURE: '/auth/profile-picture',
   },
   FILES: {
     LIST: '/files',

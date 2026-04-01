@@ -8,6 +8,7 @@ export interface User {
   last_name?: string;
   organization?: string;
   is_active: boolean;
+  profile_picture_url?: string;
   created_at: string;
 }
 

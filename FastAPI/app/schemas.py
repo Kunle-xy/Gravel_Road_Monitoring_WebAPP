@@ -38,8 +38,9 @@ class UserResponse(BaseModel):
     last_name: Optional[str]
     organization: Optional[str]
     is_active: bool
+    profile_picture_url: Optional[str] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
