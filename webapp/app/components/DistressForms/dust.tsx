@@ -370,42 +370,58 @@ export default function DustForm() {
           </div>
         )}
         {/* === RESULTS VIEW === */}
-        {showResults && analysisResults && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-bold text-slate-200">Dust Analysis Results</h3>
-              <button onClick={() => setShowResults(false)} className="text-[11px] text-blue-400 hover:text-blue-300">Back to setup</button>
-            </div>
+        {showResults && analysisResults && (() => {
+          const pct = analysisResults.percentages || {};
+          const cnt = analysisResults.counts || {};
+          const total = analysisResults.total_classified || 0;
+          const high = pct["High Dust"] ?? 0;
+          const low = pct["Low Dust"] ?? 0;
+          const none = pct["Non Dust"] ?? 0;
+          const highN = cnt["High Dust"] ?? 0;
+          const lowN = cnt["Low Dust"] ?? 0;
+          const noneN = cnt["Non Dust"] ?? 0;
 
-            {/* Pie chart */}
-            <div className="flex justify-center">
-              <PieChart data={analysisResults.percentages} counts={analysisResults.counts} total={analysisResults.total_classified} />
-            </div>
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[14px] font-bold text-slate-200">Dust Analysis Results</h3>
+                <button onClick={() => setShowResults(false)} className="text-[11px] text-blue-400 hover:text-blue-300">Back to setup</button>
+              </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-2">
-                <div className="text-[18px] font-bold text-red-400">{analysisResults.percentages["High Dust"]}%</div>
-                <div className="text-[10px] text-slate-400">High Dust</div>
-                <div className="text-[10px] text-slate-500">{analysisResults.counts["High Dust"]} frames</div>
-              </div>
-              <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-2">
-                <div className="text-[18px] font-bold text-yellow-400">{analysisResults.percentages["Low Dust"]}%</div>
-                <div className="text-[10px] text-slate-400">Low Dust</div>
-                <div className="text-[10px] text-slate-500">{analysisResults.counts["Low Dust"]} frames</div>
-              </div>
-              <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-2">
-                <div className="text-[18px] font-bold text-green-400">{analysisResults.percentages["Non Dust"]}%</div>
-                <div className="text-[10px] text-slate-400">Non Dust</div>
-                <div className="text-[10px] text-slate-500">{analysisResults.counts["Non Dust"]} frames</div>
-              </div>
-            </div>
+              {total === 0 ? (
+                <div className="text-slate-400 text-[12px] text-center py-6">No frames were classified. No vehicles encroached the road polygon.</div>
+              ) : (
+                <>
+                  <div className="flex justify-center">
+                    <PieChart data={pct} counts={cnt} total={total} />
+                  </div>
 
-            <div className="text-[10px] text-slate-500 text-center">
-              Total classified frames: {analysisResults.total_classified}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-2">
+                      <div className="text-[18px] font-bold text-red-400">{high}%</div>
+                      <div className="text-[10px] text-slate-400">High Dust</div>
+                      <div className="text-[10px] text-slate-500">{highN} frames</div>
+                    </div>
+                    <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-2">
+                      <div className="text-[18px] font-bold text-yellow-400">{low}%</div>
+                      <div className="text-[10px] text-slate-400">Low Dust</div>
+                      <div className="text-[10px] text-slate-500">{lowN} frames</div>
+                    </div>
+                    <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-2">
+                      <div className="text-[18px] font-bold text-green-400">{none}%</div>
+                      <div className="text-[10px] text-slate-400">Non Dust</div>
+                      <div className="text-[10px] text-slate-500">{noneN} frames</div>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 text-center">
+                    Total classified frames: {total}
+                  </div>
+                </>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </>
   );
