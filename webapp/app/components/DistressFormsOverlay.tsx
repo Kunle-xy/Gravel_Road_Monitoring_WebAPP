@@ -11,10 +11,10 @@ import PotholeForm from './DistressForms/pothole';
 const CloseButton = ({ onClick }: { onClick: () => void }) => (
   <button
     onClick={onClick}
-    className="absolute top-2 right-2 text-slate-400 hover:text-white z-10"
+    className="absolute top-3 right-3 text-slate-400 hover:text-white z-10 p-0.5 hover:bg-slate-700 rounded transition-colors"
     aria-label="Close"
   >
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   </button>
@@ -47,14 +47,12 @@ const DistressFormsOverlay = () => {
     <div className="absolute right-1 sm:right-3 top-1 sm:top-2 z-20 pointer-events-auto">
       <div className="relative w-[92vw] sm:w-[24rem] md:w-[26rem] max-w-[26rem] max-h-[85vh] overflow-y-auto">
         <CloseButton onClick={close} />
-        <div className="w-full">
-          {activeDistress === 'Rut' && <RutForm />}
-          {activeDistress === 'Corrugation' && <CorrugationForm />}
-          {activeDistress === 'Crown' && <CrownForm />}
-          {activeDistress === 'Loose Aggregate' && <div className="text-slate-400 bg-slate-800 rounded-lg p-4">Loose Aggregate form coming soon...</div>}
-          {activeDistress === 'Potholes' && <PotholeForm />}
-          {activeDistress === 'Drainage' && <div className="text-slate-400 bg-slate-800 rounded-lg p-4">Drainage form coming soon...</div>}
-        </div>
+        {activeDistress === 'Rut' && <RutForm />}
+        {activeDistress === 'Corrugation' && <CorrugationForm />}
+        {activeDistress === 'Crown' && <CrownForm />}
+        {activeDistress === 'Loose Aggregate' && <div className="text-slate-400 bg-slate-800 rounded-lg p-4">Loose Aggregate form coming soon...</div>}
+        {activeDistress === 'Potholes' && <PotholeForm />}
+        {activeDistress === 'Drainage' && <div className="text-slate-400 bg-slate-800 rounded-lg p-4">Drainage form coming soon...</div>}
       </div>
     </div>
   );

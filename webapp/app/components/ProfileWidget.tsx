@@ -2,7 +2,7 @@
 import Link from "next/link";
 import React, { useEffect, useState, useCallback, memo, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload, ArrowDownUp, FileText, Download, ExternalLink, ChevronDown, ChevronUp, Info, Trash2 } from "lucide-react";
+import { LogOut, RefreshCw, CloudCog, FolderPlus, Upload, ArrowDownUp, FileText, Download, ExternalLink, ChevronDown, ChevronUp, ChevronRight, Info, Trash2 } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "../lib/api";
 import TiffFileItem from "./TiffFiles/TiffFileItem";
 import FolderTreeItem from "./FolderTree/FolderTreeItem";
@@ -73,6 +73,114 @@ interface GroupedJobs {
   corrugation: CompletedJob[];
   pothole: CompletedJob[];
   dust: CompletedJob[];
+}
+
+function JobGroup({ groupKey, label, apiKey, color, jobs, onDelete, getDemFilename }: {
+  groupKey: string; label: string; apiKey: string; color: string;
+  jobs: CompletedJob[]; onDelete: (id: string, date: string, type: any) => void;
+  getDemFilename: (id: string) => string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center gap-1.5 w-full text-left text-[11px] font-semibold py-1 px-1 rounded hover:bg-white/5 transition-colors ${color}`}
+      >
+        {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+        {label} ({jobs.length})
+      </button>
+      {expanded && (
+        <div className="ml-3 mt-1 space-y-1 border-l border-white/10 pl-2">
+          {jobs.map((job) => {
+            const isOpen = expandedJobId === job.id;
+            const dateStr = new Date(job.completed_at).toLocaleDateString();
+            // Summary text
+            let summary = '';
+            if (groupKey === 'rut' && job.total_ruts_detected != null) summary = `${job.total_ruts_detected} ruts`;
+            else if (groupKey === 'pothole' && job.severity) summary = job.severity;
+            else if (groupKey === 'dust' && job.results_json?.percentages) {
+              const p = job.results_json.percentages;
+              summary = `H:${p["High Dust"] ?? 0}% L:${p["Low Dust"] ?? 0}% N:${p["No Dust"] ?? 0}%`;
+            }
+            else if (groupKey === 'crown') summary = 'Crown analysis';
+            else if (groupKey === 'corrugation') summary = 'Corrugation analysis';
+
+            return (
+              <div key={job.id}>
+                <button
+                  onClick={() => setExpandedJobId(isOpen ? null : job.id)}
+                  className="flex items-center gap-1 w-full text-left text-[10px] text-slate-300 py-0.5 px-1 rounded hover:bg-white/5 transition-colors"
+                >
+                  {isOpen ? <ChevronDown className="h-2.5 w-2.5 shrink-0" /> : <ChevronRight className="h-2.5 w-2.5 shrink-0" />}
+                  <span className="font-medium">{dateStr}</span>
+                  {summary && <span className="text-slate-500 ml-1">— {summary}</span>}
+                </button>
+                {isOpen && (
+                  <div className="ml-4 mt-1 mb-1 bg-slate-800/50 rounded p-2 space-y-1.5">
+                    {/* DEM info for rut/crown/corrugation/pothole */}
+                    {job.tiff_file_id && (
+                      <div className="text-[9px] text-slate-400">DEM: {getDemFilename(job.tiff_file_id)}</div>
+                    )}
+                    {/* Rut details */}
+                    {groupKey === 'rut' && (
+                      <div className="text-[9px] text-slate-400 space-y-0.5">
+                        {job.total_area_sqft != null && <div>Area: {job.total_area_sqft.toFixed(1)} sq ft</div>}
+                        {job.dy_freq != null && <div>Sampling: {job.dy_freq}/100px, Width: {job.dx}m</div>}
+                      </div>
+                    )}
+                    {/* Dust details */}
+                    {groupKey === 'dust' && job.results_json?.counts && (
+                      <div className="text-[9px] text-slate-400 space-y-0.5">
+                        <div>High: {job.results_json.counts["High Dust"] ?? 0} frames</div>
+                        <div>Low: {job.results_json.counts["Low Dust"] ?? 0} frames</div>
+                        <div>None: {job.results_json.counts["No Dust"] ?? 0} frames</div>
+                        <div>Total: {job.results_json.total_classified ?? 0} classified</div>
+                      </div>
+                    )}
+                    {/* Pothole details */}
+                    {groupKey === 'pothole' && (
+                      <div className="text-[9px] text-slate-400 space-y-0.5">
+                        {job.depth_inches != null && <div>Depth: {job.depth_inches.toFixed(2)} in</div>}
+                        {job.width_feet != null && <div>Width: {job.width_feet.toFixed(2)} ft</div>}
+                      </div>
+                    )}
+                    {/* Action buttons */}
+                    <div className="flex gap-1.5">
+                      {job.html_plot_url && (
+                        <button
+                          onClick={() => window.open(job.html_plot_url!, '_blank', 'noopener,noreferrer')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[9px] transition-colors cursor-pointer text-slate-200"
+                        >
+                          <ExternalLink className="h-2.5 w-2.5" /> Plot
+                        </button>
+                      )}
+                      {job.pdf_plot_url && (
+                        <button
+                          onClick={() => window.open(job.pdf_plot_url!, '_blank', 'noopener,noreferrer')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[9px] transition-colors cursor-pointer text-slate-200"
+                        >
+                          <Download className="h-2.5 w-2.5" /> PDF
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onDelete(job.id, job.completed_at, apiKey)}
+                        className="flex items-center justify-center gap-1 px-2 py-1 bg-red-600/20 hover:bg-red-600/40 rounded text-[9px] transition-colors cursor-pointer text-red-400"
+                      >
+                        <Trash2 className="h-2.5 w-2.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ProfileWidget() {
@@ -500,64 +608,11 @@ function ProfileWidget() {
                     )}
                   </div>
                   {showCompletedJobs && (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {groups.map(({ key, label, apiKey, color }) => {
                         const jobs = completedJobs[key];
                         if (jobs.length === 0) return null;
-                        return (
-                          <div key={key}>
-                            <div className={`text-[10px] font-semibold mb-1 ${color}`}>{label} ({jobs.length})</div>
-                            <div className="space-y-1.5">
-                              {jobs.map((job) => (
-                                <div key={job.id} className="bg-green-900/20 border border-green-700/30 rounded-lg p-2 text-xs">
-                                  <div className="text-slate-300 mb-1 flex items-center justify-between gap-1">
-                                    <div className="flex items-center gap-1">
-                                      <span className="font-medium">{new Date(job.completed_at).toLocaleDateString()}</span>
-                                      {/* Type-specific summary */}
-                                      {key === 'rut' && job.total_ruts_detected != null && (
-                                        <><span className="text-slate-500">•</span><span className="text-green-400">{job.total_ruts_detected} ruts</span></>
-                                      )}
-                                      {key === 'pothole' && job.severity && (
-                                        <><span className="text-slate-500">•</span><span className="text-green-400">{job.severity}</span></>
-                                      )}
-                                      {key === 'dust' && job.results_json?.percentages && (
-                                        <><span className="text-slate-500">•</span><span className="text-green-400">H:{job.results_json.percentages["High Dust"] ?? 0}% L:{job.results_json.percentages["Low Dust"] ?? 0}%</span></>
-                                      )}
-                                    </div>
-                                    <button
-                                      onClick={() => handleDeleteJob(job.id, job.completed_at, apiKey as any)}
-                                      className="p-1 hover:bg-red-600/30 rounded transition-colors opacity-0 group-hover:opacity-100"
-                                      title="Delete"
-                                    >
-                                      <Trash2 className="h-3 w-3 text-red-400" />
-                                    </button>
-                                  </div>
-                                  {/* Action buttons — show Plot/PDF if available */}
-                                  {(job.html_plot_url || job.pdf_plot_url) && (
-                                    <div className="flex gap-1.5">
-                                      {job.html_plot_url && (
-                                        <button
-                                          onClick={() => window.open(job.html_plot_url!, '_blank', 'noopener,noreferrer')}
-                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 rounded text-[10px] transition-colors cursor-pointer"
-                                        >
-                                          <ExternalLink className="h-3 w-3" /><span>Plot</span>
-                                        </button>
-                                      )}
-                                      {job.pdf_plot_url && (
-                                        <button
-                                          onClick={() => window.open(job.pdf_plot_url!, '_blank', 'noopener,noreferrer')}
-                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600/30 hover:bg-green-600/50 rounded text-[10px] transition-colors cursor-pointer"
-                                        >
-                                          <Download className="h-3 w-3" /><span>PDF</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
+                        return <JobGroup key={key} groupKey={key} label={label} apiKey={apiKey} color={color} jobs={jobs} onDelete={handleDeleteJob} getDemFilename={getDemFilename} />;
                       })}
                     </div>
                   )}
