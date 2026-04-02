@@ -72,6 +72,17 @@ def analyze_dust_task(self, job_id: str):
         total_frames = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
         polygon = np.array(job.polygon_points, dtype=np.int32)
 
+        frame_w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+        frame_h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+        logger.info(f"Video: {frame_w}x{frame_h}, {total_frames} frames")
+        logger.info(f"Polygon points: {job.polygon_points}")
+
+        # Validate polygon is within video bounds
+        poly_max_x = polygon[:, 0].max()
+        poly_max_y = polygon[:, 1].max()
+        if poly_max_x > frame_w or poly_max_y > frame_h:
+            logger.warning(f"Polygon ({poly_max_x},{poly_max_y}) exceeds video dimensions ({frame_w},{frame_h})")
+
         # Load YOLO model
         yolo = get_yolo_model()
         class_names = yolo.names
@@ -149,6 +160,8 @@ def analyze_dust_task(self, job_id: str):
             frame_idx += 1
 
         cap.release()
+
+        logger.info(f"Job {job_id}: Processed {frame_idx} frames, truck_frames={truck_frames}, no_truck_frames={no_truck_frames}, road_encroached={road_encroached}")
 
         # Compute results
         total_classified = sum(counts.values())
