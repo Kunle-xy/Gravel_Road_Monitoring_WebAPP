@@ -210,7 +210,7 @@ function ProfileWidget() {
   const [newFolderName, setNewFolderName] = useState("");
   const [sortBy, setSortBy] = useState<'name' | 'fileCount'>('fileCount');
   const [showCompletedJobs, setShowCompletedJobs] = useState(false);
-  const { user, logout, isAuthenticated, refreshUser } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
 
   // Resizable width state
   const [isResizing, setIsResizing] = useState(false);
@@ -510,51 +510,9 @@ function ProfileWidget() {
 
       {/* === PROFILE HEADER === */}
       <div className="flex items-center gap-3 mb-6 shrink-0">
-        <label className="relative cursor-pointer shrink-0 group" title="Click to change profile picture">
-          {user?.profile_picture_url ? (
-            <img
-              src={user.profile_picture_url}
-              alt="Profile"
-              className="h-10 w-10 rounded-full object-cover ring-2 ring-slate-600 group-hover:ring-blue-400 transition-colors"
-            />
-          ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold ring-2 ring-slate-600 group-hover:ring-blue-400 transition-colors">
-              {user ? getInitials(user.first_name, user.last_name) : 'U'}
-            </div>
-          )}
-          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Upload className="h-4 w-4 text-white" />
-          </div>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              try {
-                const res = await fetchWithAuth(API_ENDPOINTS.AUTH.PROFILE_PICTURE, { method: 'POST' });
-                if (!res.ok) throw new Error('Failed to get upload URL');
-                const { presigned_url } = await res.json();
-                // Upload directly to S3 via XHR (avoids CORS issues with fetch)
-                await new Promise<void>((resolve, reject) => {
-                  const xhr = new XMLHttpRequest();
-                  xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
-                  xhr.onerror = () => reject(new Error('Upload failed'));
-                  xhr.open('PUT', presigned_url);
-                  xhr.setRequestHeader('Content-Type', 'image/jpeg');
-                  xhr.send(file);
-                });
-                // Refresh user data to get new URL
-                if (refreshUser) await refreshUser();
-              } catch (err) {
-                alert('Failed to upload profile picture');
-                console.error(err);
-              }
-              e.target.value = '';
-            }}
-          />
-        </label>
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold shrink-0">
+          {user ? getInitials(user.first_name, user.last_name) : 'U'}
+        </div>
         <div
           className={`transition-all duration-200 overflow-hidden ${
             open ? "opacity-100 w-auto" : "opacity-0 w-0"
