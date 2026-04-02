@@ -84,15 +84,29 @@ function JobGroup({ groupKey, label, apiKey, color, jobs, onDelete, getDemFilena
   const [expanded, setExpanded] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
+  const handleDeleteAll = () => {
+    if (!confirm(`Delete all ${jobs.length} ${label.toLowerCase()} job(s)? This cannot be undone.`)) return;
+    jobs.forEach((job) => onDelete(job.id, job.completed_at, apiKey));
+  };
+
   return (
     <div>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={`flex items-center gap-1.5 w-full text-left text-[11px] font-semibold py-1 px-1 rounded hover:bg-white/5 transition-colors ${color}`}
-      >
-        {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-        {label} ({jobs.length})
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className={`flex-1 flex items-center gap-1.5 text-left text-[11px] font-semibold py-1 px-1 rounded hover:bg-white/5 transition-colors ${color}`}
+        >
+          {expanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+          {label} ({jobs.length})
+        </button>
+        <button
+          onClick={handleDeleteAll}
+          className="p-1 hover:bg-red-600/30 rounded transition-colors"
+          title={`Delete all ${label.toLowerCase()} jobs`}
+        >
+          <Trash2 className="h-3 w-3 text-red-400" />
+        </button>
+      </div>
       {expanded && (
         <div className="ml-3 mt-1 space-y-1 border-l border-white/10 pl-2">
           {jobs.map((job) => {
