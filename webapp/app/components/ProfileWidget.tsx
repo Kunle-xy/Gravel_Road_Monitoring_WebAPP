@@ -76,17 +76,18 @@ interface GroupedJobs {
   dust: CompletedJob[];
 }
 
-function JobGroup({ groupKey, label, apiKey, color, jobs, onDelete, getDemFilename }: {
+function JobGroup({ groupKey, label, apiKey, color, jobs, onDelete, onBulkDelete, getDemFilename }: {
   groupKey: string; label: string; apiKey: string; color: string;
-  jobs: CompletedJob[]; onDelete: (id: string, date: string, type: any) => void;
+  jobs: CompletedJob[];
+  onDelete: (id: string, date: string, type: any) => void;
+  onBulkDelete: (jobs: CompletedJob[], type: any, label: string) => void;
   getDemFilename: (id: string) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   const handleDeleteAll = () => {
-    if (!confirm(`Delete all ${jobs.length} ${label.toLowerCase()} job(s)? This cannot be undone.`)) return;
-    jobs.forEach((job) => onDelete(job.id, job.completed_at, apiKey));
+    onBulkDelete(jobs, apiKey, label);
   };
 
   return (
@@ -398,12 +399,8 @@ function ProfileWidget() {
     }
   };
 
-  // Delete job handler
-  const handleDeleteJob = async (jobId: string, completedDate: string, type: keyof typeof API_ENDPOINTS = 'RUT') => {
-    if (!confirm(`Are you sure you want to delete this ${type.toLowerCase()} analysis job from ${new Date(completedDate).toLocaleDateString()}?`)) {
-      return;
-    }
-
+  // Shared deletion primitive — no confirm, no refresh. Returns success.
+  const deleteJobRequest = async (jobId: string, type: keyof typeof API_ENDPOINTS): Promise<boolean> => {
     const endpoints: Record<string, (id: string) => string> = {
       RUT: API_ENDPOINTS.RUT.DELETE,
       CROWN: API_ENDPOINTS.CROWN.DELETE,
@@ -412,22 +409,43 @@ function ProfileWidget() {
       DUST: API_ENDPOINTS.DUST.DELETE,
     };
     const deleteFn = endpoints[type];
-    if (!deleteFn) return;
+    if (!deleteFn) return false;
 
     try {
-      const response = await fetchWithAuth(deleteFn(jobId), {
-        method: 'DELETE',
-      });
-
-      if (response.ok || response.status === 204) {
-        // Refresh completed jobs list after deletion
-        await fetchCompletedJobs();
-      } else {
-        alert('Failed to delete job. Please try again.');
-      }
+      const response = await fetchWithAuth(deleteFn(jobId), { method: 'DELETE' });
+      return response.ok || response.status === 204;
     } catch (error) {
       console.error('Failed to delete job:', error);
+      return false;
+    }
+  };
+
+  // Delete a single job (confirm then refresh)
+  const handleDeleteJob = async (jobId: string, completedDate: string, type: keyof typeof API_ENDPOINTS = 'RUT') => {
+    if (!confirm(`Are you sure you want to delete this ${type.toLowerCase()} analysis job from ${new Date(completedDate).toLocaleDateString()}?`)) {
+      return;
+    }
+    const ok = await deleteJobRequest(jobId, type);
+    if (ok) {
+      await fetchCompletedJobs();
+    } else {
       alert('Failed to delete job. Please try again.');
+    }
+  };
+
+  // Delete every job in a distress group — single confirm, sequential requests, single refresh.
+  const handleBulkDeleteJobs = async (jobs: CompletedJob[], type: keyof typeof API_ENDPOINTS, label: string) => {
+    if (!jobs.length) return;
+    if (!confirm(`Delete all ${jobs.length} ${label.toLowerCase()} job(s)? This cannot be undone.`)) return;
+
+    let failed = 0;
+    for (const job of jobs) {
+      const ok = await deleteJobRequest(job.id, type);
+      if (!ok) failed += 1;
+    }
+    await fetchCompletedJobs();
+    if (failed > 0) {
+      alert(`${failed} of ${jobs.length} ${label.toLowerCase()} job(s) failed to delete.`);
     }
   };
 
@@ -628,7 +646,7 @@ function ProfileWidget() {
                       {groups.map(({ key, label, apiKey, color }) => {
                         const jobs = completedJobs[key];
                         if (jobs.length === 0) return null;
-                        return <JobGroup key={key} groupKey={key} label={label} apiKey={apiKey} color={color} jobs={jobs} onDelete={handleDeleteJob} getDemFilename={getDemFilename} />;
+                        return <JobGroup key={key} groupKey={key} label={label} apiKey={apiKey} color={color} jobs={jobs} onDelete={handleDeleteJob} onBulkDelete={handleBulkDeleteJobs} getDemFilename={getDemFilename} />;
                       })}
                     </div>
                   )}
