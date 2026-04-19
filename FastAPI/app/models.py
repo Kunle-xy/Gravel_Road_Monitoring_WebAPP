@@ -109,10 +109,10 @@ class RutAnalysisJob(Base):
 
     # Analysis parameters
     polygon_geojson = Column(JSON, nullable=False)  # GeoJSON polygon for analysis area
-    dy_freq = Column(Integer, default=3)  # Sampling frequency per 100 pixels
-    dx = Column(Float, default=0.1)  # Rutting width in meters
+    dy_freq = Column(Integer, default=20)  # Sampling frequency per 100 pixels
+    dx = Column(Float, default=0.05)  # Rutting width in meters
     apply_smoothing = Column(Boolean, default=False)  # Apply Gaussian smoothing
-    gaussian_sigma = Column(Float, default=1.0)  # Gaussian sigma in pixels
+    gaussian_sigma = Column(Float, default=5.0)  # Gaussian sigma in pixels
     neighbor_eval = Column(Boolean, default=False)  # Try neighboring sampling frequencies
     neighbor_range = Column(Integer, default=2)  # Plus or minus range for neighbor frequencies
 
@@ -126,8 +126,8 @@ class RutAnalysisJob(Base):
     results_json = Column(JSON)  # Store detected ruts as JSON
     html_plot_s3_key = Column(String(500))  # S3 key for HTML plot
     html_plot_url = Column(Text)  # CloudFront URL for HTML plot
-    pdf_plot_s3_key = Column(String(500))  # S3 key for PDF report
-    pdf_plot_url = Column(Text)  # CloudFront URL for PDF report
+    features_geojson_s3_key = Column(String(500))  # S3 key for ruts GeoJSON overlay
+    features_geojson_url = Column(Text)  # Presigned URL for ruts GeoJSON overlay
 
     # Statistics
     total_ruts_detected = Column(Integer, default=0)

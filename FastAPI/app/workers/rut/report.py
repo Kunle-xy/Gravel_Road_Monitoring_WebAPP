@@ -1,37 +1,71 @@
 """
-Report generation for rut analysis.
+HTML report generation for rut analysis.
 
-Generates HTML interactive plots and multi-page PDF reports
-with summary statistics, deduct curve charts, and cross-section profiles.
+Crown-style interactive HTML:
+- Density table (severity / count / area / density %)
+- Summary bar chart (count + area)
+- Grid of profile plots that show where the ruts are on each sampling line
 """
 
 import base64
 import logging
-from datetime import datetime
-from typing import Dict, Any, Optional
+import os
+from functools import lru_cache
+from typing import Dict, Any
 
-import plotly.graph_objects as go
-from weasyprint import HTML
-
-from app.workers.rut.plots import create_plot_figure, create_deduct_curve_plot
+from app.workers.rut.plots import (
+    create_profile_plot,
+    create_summary_figure,
+    create_neighbor_summary_figure,
+)
 
 logger = logging.getLogger(__name__)
 
-
-def generate_html_plot(results: Dict[str, Any], job_id: str) -> str:
-    """Generate interactive HTML plot of rut analysis results."""
-    fig = create_plot_figure(results)
-    return fig.to_html()
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
 
-def _render_plot_image(fig: go.Figure, width: int, height: int) -> str:
-    """Render a Plotly figure to a base64 PNG string."""
-    img_bytes = fig.to_image(format="png", width=width, height=height, scale=2)
-    return base64.b64encode(img_bytes).decode('utf-8')
+@lru_cache(maxsize=4)
+def _load_asset_b64(filename: str) -> str:
+    """Load a static reference image and return base64-encoded contents."""
+    path = os.path.join(ASSETS_DIR, filename)
+    with open(path, "rb") as fh:
+        return base64.b64encode(fh.read()).decode("utf-8")
 
 
-def _build_summary_table(results: Dict[str, Any], density_data: Dict[str, Any]) -> str:
-    """Build compact HTML summary table with severity breakdown."""
+def _reference_image_figures() -> str:
+    """
+    Return two `<figure>` blocks (deduct curves + severity classification)
+    suitable for inserting into a flex/grid row.
+    """
+    try:
+        deduct_b64 = _load_asset_b64("rut_deduct_curve.png")
+        severity_b64 = _load_asset_b64("rut_severity_classes.png")
+    except Exception as e:
+        logger.warning(f"Could not load reference images: {e}")
+        return ""
+
+    return f"""
+    <figure style="margin:0; min-width:0;">
+        <img src="data:image/png;base64,{deduct_b64}"
+             alt="Rut deduct value curves"
+             style="width:100%; height:auto; border:1px solid #ccc; border-radius:4px;" />
+        <figcaption style="font-size:11px; color:#555; text-align:center; margin-top:4px;">
+            Deduct value curves for ruts (PCI reference)
+        </figcaption>
+    </figure>
+    <figure style="margin:0; min-width:0;">
+        <img src="data:image/png;base64,{severity_b64}"
+             alt="Rut severity classification"
+             style="width:100%; height:auto; border:1px solid #ccc; border-radius:4px;" />
+        <figcaption style="font-size:11px; color:#555; text-align:center; margin-top:4px;">
+            Severity classes by depth (Low &lt; 1″, Medium 1–3″, High &gt; 3″)
+        </figcaption>
+    </figure>"""
+
+
+def _build_density_table_rows(results: Dict[str, Any]) -> str:
+    """Density table rows: severity / count / area / density %. No deduct."""
+    density_data = results.get('density_data') or {}
     rows = ""
     for sev, color in [("Low", "#2e7d32"), ("Medium", "#e65100"), ("High", "#c62828")]:
         d = density_data.get(sev, {})
@@ -42,231 +76,153 @@ def _build_summary_table(results: Dict[str, Any], density_data: Dict[str, Any]) 
             <td>{results.get(count_key, 0)}</td>
             <td>{d.get('area_sqft', 0):.1f}</td>
             <td>{d.get('density_percent', 0):.2f}%</td>
-            <td style="font-weight:bold;">{d.get('deduct_value', 0)}</td>
         </tr>"""
-
-    return f"""
-    <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:8px;">
-        <tr style="background:#e0e0e0;">
-            <th style="padding:6px; text-align:left; border:1px solid #999;">Severity</th>
-            <th style="padding:6px; text-align:center; border:1px solid #999;">Count</th>
-            <th style="padding:6px; text-align:center; border:1px solid #999;">Area (ft&sup2;)</th>
-            <th style="padding:6px; text-align:center; border:1px solid #999;">Density</th>
-            <th style="padding:6px; text-align:center; border:1px solid #999;">Deduct</th>
-        </tr>
-        {rows}
-        <tr style="background:#f5f5f5; font-weight:bold;">
-            <td style="padding:6px; border:1px solid #999;">Total</td>
-            <td style="padding:6px; text-align:center; border:1px solid #999;">{results['total_ruts_detected']}</td>
-            <td style="padding:6px; text-align:center; border:1px solid #999;">{results['total_area_sqft']:.1f}</td>
-            <td style="padding:6px; text-align:center; border:1px solid #999;">-</td>
-            <td style="padding:6px; text-align:center; border:1px solid #999;">-</td>
-        </tr>
-    </table>"""
+    return rows
 
 
-def generate_pdf_from_results(
-    results: Dict[str, Any],
-    job_id: str,
-    screenshot_base64: Optional[str] = None
-) -> bytes:
+def generate_html_plot(results: Dict[str, Any], job_id: str) -> str:
     """
-    Generate landscape PDF report maximizing plot space:
-    - Page 1: Title, summary table, deduct curve (+ optional screenshot)
-    - Pages 2+: Cross-section profiles, 6 per page in 3x2 grid
+    Build the interactive HTML report.
+
+    Layout:
+        1. Title + meta
+        2. Density table (severity / count / area / density %)
+        3. Summary chart (count + area bars)
+        4. Grid of profile plots highlighting where each rut sits
     """
-    try:
-        logger.info(f"Job {job_id}: Generating PDF report")
+    cross_sections = results.get('cross_sections', []) or []
+    polygon_area_sqft = results.get('polygon_area_sqft', 0.0)
+    total_ruts = results.get('total_ruts_detected', 0)
+    total_area = results.get('total_area_sqft', 0.0)
+    neighbor_eval = bool(results.get('neighbor_eval'))
 
-        cross_sections = results.get('cross_sections', [])
-        density_data = results.get('density_data', {})
+    # Summary chart — swap in the per-frequency view when neighbor eval is on
+    summary_fig = (
+        create_neighbor_summary_figure(results) if neighbor_eval
+        else create_summary_figure(results)
+    )
+    summary_fig.update_layout(autosize=True, width=None)
+    summary_html = summary_fig.to_html(
+        full_html=False,
+        include_plotlyjs='cdn',
+        config={'responsive': True},
+        default_width='100%',
+    )
+    summary_heading = "Frequency Neighbor Summary" if neighbor_eval else "Summary Chart"
 
-        # --- PAGE 1: Summary + Deduct Curve ---
-        screenshot_block = ""
-        if screenshot_base64:
-            screenshot_block = (
-                f'<div style="text-align:center; margin-bottom:10px;">'
-                f'<img src="data:image/png;base64,{screenshot_base64}" '
-                f'style="max-width:100%; max-height:200px; border:1px solid #ccc;" />'
-                f'</div>'
-            )
-
-        # Deduct curve — render large to fill page
-        deduct_plot_html = ""
-        if density_data:
-            try:
-                deduct_fig = create_deduct_curve_plot(density_data)
-                deduct_fig.update_layout(
-                    margin=dict(l=60, r=30, t=50, b=50),
-                    height=420, width=900
-                )
-                img_b64 = _render_plot_image(deduct_fig, 900, 420)
-                deduct_plot_html = (
-                    f'<div style="text-align:center;">'
-                    f'<img src="data:image/png;base64,{img_b64}" '
-                    f'style="width:100%; max-width:100%; height:auto;" />'
-                    f'</div>'
-                )
-            except Exception as e:
-                logger.warning(f"Job {job_id}: Deduct curve plot failed: {e}")
-
-        summary_table = _build_summary_table(results, density_data)
-
-        page1 = f"""
-        <div class="page">
-            <div class="title-bar">
-                <h1>Rut Distress Analysis Report</h1>
-                <span>{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} &bull; Job {job_id[:8]}</span>
+    # Profile plots
+    profile_blocks = ""
+    for i, cs in enumerate(cross_sections):
+        try:
+            fig = create_profile_plot(cs)
+            plot_html = fig.to_html(full_html=False, include_plotlyjs=False)
+            n_ruts = len(cs.get('ruts') or [])
+            header = f"Line {i + 1} &nbsp;|&nbsp; x = {cs.get('x', 0):.2f} m &nbsp;|&nbsp; {n_ruts} rut{'s' if n_ruts != 1 else ''}"
+            profile_blocks += f"""
+            <div class="profile-card">
+                <div class="profile-header">{header}</div>
+                {plot_html}
             </div>
-            {screenshot_block}
-            <div style="display:flex; gap:20px; align-items:flex-start;">
-                <div style="flex:1; min-width:0;">
-                    <h3 style="margin:0 0 4px 0; font-size:13px; color:#333;">Detection Summary</h3>
-                    {summary_table}
-                    <p style="font-size:11px; color:#666; margin-top:6px;">
-                        Polygon Area: {results.get('polygon_area_sqft', 0):.1f} ft&sup2;
-                    </p>
-                </div>
-            </div>
-            <h3 style="margin:14px 0 4px 0; font-size:13px; color:#333; text-align:center;">Deduct Value Curves</h3>
-            {deduct_plot_html}
-        </div>"""
+            """
+        except Exception as e:
+            logger.warning(f"Job {job_id}: profile plot {i} failed: {e}")
 
-        # --- PAGES 2+: Cross-section plots, 6 per page (3 rows x 2 cols) ---
-        plots_per_page = 6
-        plot_pages = ""
-        total_cs = len(cross_sections)
+    table_rows = _build_density_table_rows(results)
+    reference_figures = _reference_image_figures()
 
-        for page_start in range(0, total_cs, plots_per_page):
-            page_end = min(page_start + plots_per_page, total_cs)
-            page_sections = cross_sections[page_start:page_end]
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Rut Distress Report &mdash; Job {job_id[:8]}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #fafafa; color: #222; }}
+            h1 {{ color: #333; margin-bottom: 4px; }}
+            h2 {{ color: #333; margin-top: 28px; }}
+            .meta {{ color: #666; font-size: 12px; margin-bottom: 18px; }}
+            table {{ border-collapse: collapse; margin: 10px 0; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px 14px; text-align: left; }}
+            th {{ background: #e0e0e0; }}
+            .totals-row {{ font-weight: bold; background: #f5f5f5; }}
+            /* Density table + reference images, side by side */
+            .summary-band {{
+                display: grid;
+                grid-template-columns: minmax(340px, 1fr) minmax(240px, 1fr) minmax(240px, 1fr);
+                gap: 16px;
+                align-items: start;
+                margin-top: 12px;
+            }}
+            .summary-band > * {{ min-width: 0; }}
+            .summary-band table {{ width: 100%; margin: 0; }}
+            @media (max-width: 1000px) {{
+                .summary-band {{ grid-template-columns: 1fr; }}
+            }}
+            /* The chart gets the full width of the page */
+            .chart-wrap {{
+                width: 100%;
+                margin-top: 8px;
+            }}
+            .chart-wrap .plotly-graph-div,
+            .chart-wrap .js-plotly-plot {{
+                width: 100% !important;
+            }}
+            .profiles-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+                gap: 16px;
+                margin-top: 12px;
+            }}
+            .profile-card {{
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 12px;
+                background: white;
+            }}
+            .profile-header {{
+                font-weight: bold;
+                font-size: 13px;
+                margin-bottom: 6px;
+                color: #333;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Rut Distress Report</h1>
+        <div class="meta">Job ID: {job_id} &middot; Polygon Area: {polygon_area_sqft:.1f} ft&sup2;</div>
 
-            plots_html = ""
-            for idx, cs in enumerate(page_sections):
-                global_idx = page_start + idx
-                try:
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=cs['distances'], y=cs['elevations'],
-                        mode='lines', line=dict(color='#1565c0', width=2)
-                    ))
-                    fig.update_layout(
-                        title=dict(text=f"Section {global_idx+1} (x={cs.get('x', 0):.1f}m)",
-                                   font=dict(size=11)),
-                        xaxis_title="Distance (m)", yaxis_title="Elevation (m)",
-                        template="simple_white",
-                        margin=dict(l=50, r=15, t=35, b=40),
-                        showlegend=False,
-                        xaxis=dict(tickfont=dict(size=9), title_font=dict(size=10)),
-                        yaxis=dict(tickfont=dict(size=9), title_font=dict(size=10)),
-                    )
-                    img_b64 = _render_plot_image(fig, 520, 270)
-                    plots_html += (
-                        f'<div class="cs-plot">'
-                        f'<img src="data:image/png;base64,{img_b64}" />'
-                        f'</div>'
-                    )
-                except Exception as e:
-                    logger.warning(f"Job {job_id}: Plot {global_idx+1} failed: {e}")
-                    plots_html += f'<div class="cs-plot"><p>Section {global_idx+1} unavailable</p></div>'
+        <h2>Summary</h2>
+        <div class="summary-band">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Count</th>
+                        <th>Area (ft&sup2;)</th>
+                        <th>Density</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {table_rows}
+                    <tr class="totals-row">
+                        <td>Total</td>
+                        <td>{total_ruts}</td>
+                        <td>{total_area:.1f}</td>
+                        <td>&mdash;</td>
+                    </tr>
+                </tbody>
+            </table>
+            {reference_figures}
+        </div>
 
-            page_num = (page_start // plots_per_page) + 2
-            plot_pages += f"""
-            <div class="page">
-                <div class="section-header">
-                    Cross-Section Profiles &mdash; Page {page_num}
-                    <span style="float:right; font-size:10px; color:#888;">
-                        Sections {page_start+1}&ndash;{page_end} of {total_cs}
-                    </span>
-                </div>
-                <div class="cs-grid">
-                    {plots_html}
-                </div>
-            </div>"""
+        <h2>{summary_heading}</h2>
+        <div class="chart-wrap">{summary_html}</div>
 
-        # --- FULL HTML ---
-        pdf_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                @page {{
-                    size: A4 landscape;
-                    margin: 8mm;
-                }}
-                * {{ box-sizing: border-box; }}
-                body {{
-                    font-family: Arial, Helvetica, sans-serif;
-                    margin: 0; padding: 0;
-                    color: #222;
-                }}
-                .page {{
-                    page-break-after: always;
-                    padding: 6px 10px;
-                    height: 100%;
-                }}
-                .page:last-child {{ page-break-after: auto; }}
-
-                .title-bar {{
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: baseline;
-                    border-bottom: 2px solid #333;
-                    padding-bottom: 6px;
-                    margin-bottom: 10px;
-                }}
-                .title-bar h1 {{
-                    margin: 0; font-size: 18px; color: #111;
-                }}
-                .title-bar span {{
-                    font-size: 10px; color: #666;
-                }}
-
-                .section-header {{
-                    font-size: 13px;
-                    font-weight: bold;
-                    color: #333;
-                    border-bottom: 1px solid #aaa;
-                    padding-bottom: 4px;
-                    margin-bottom: 8px;
-                }}
-
-                .cs-grid {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    grid-template-rows: repeat(3, 1fr);
-                    gap: 8px;
-                    height: calc(100% - 30px);
-                }}
-                .cs-plot {{
-                    text-align: center;
-                    page-break-inside: avoid;
-                }}
-                .cs-plot img {{
-                    width: 100%;
-                    height: auto;
-                    border: 1px solid #ddd;
-                    border-radius: 3px;
-                }}
-
-                @media print {{
-                    .page {{ page-break-after: always; }}
-                }}
-            </style>
-        </head>
-        <body>
-            {page1}
-            {plot_pages}
-        </body>
-        </html>
-        """
-
-        pdf_bytes = HTML(string=pdf_html).write_pdf()
-        logger.info(f"Job {job_id}: PDF generated, {len(pdf_bytes)} bytes, "
-                    f"{1 + (total_cs + plots_per_page - 1) // plots_per_page} pages")
-        return pdf_bytes
-
-    except Exception as e:
-        logger.error(f"Job {job_id}: Failed to generate PDF: {str(e)}", exc_info=True)
-        raise
+        <h2>Rut Locations &mdash; Sampled Profiles</h2>
+        <div class="profiles-grid">
+            {profile_blocks if profile_blocks else '<p>No rut profiles available</p>'}
+        </div>
+    </body>
+    </html>
+    """
+    return html

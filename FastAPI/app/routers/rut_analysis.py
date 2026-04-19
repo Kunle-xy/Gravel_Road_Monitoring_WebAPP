@@ -62,7 +62,7 @@ async def create_rut_analysis(
     db.refresh(job)
 
     # Start Celery task with optional screenshot
-    task = analyze_ruts_task.delay(str(job.id), analysis_request.screenshot_base64)
+    task = analyze_ruts_task.delay(str(job.id))
 
     # Update job with Celery task ID
     job.celery_task_id = task.id
@@ -168,7 +168,7 @@ async def get_rut_analysis_status(
         progress=job.progress,
         error_message=job.error_message,
         html_plot_url=job.html_plot_url,
-        pdf_plot_url=job.pdf_plot_url,
+        features_geojson_url=job.features_geojson_url,
         total_ruts_detected=job.total_ruts_detected,
         low_severity_count=job.low_severity_count,
         medium_severity_count=job.medium_severity_count,
@@ -200,7 +200,7 @@ async def delete_rut_analysis(
     # Delete S3 artifacts
     import boto3, logging
     s3 = boto3.client("s3", region_name=settings.AWS_REGION)
-    for key in [job.html_plot_s3_key, job.pdf_plot_s3_key]:
+    for key in [job.html_plot_s3_key, job.features_geojson_s3_key]:
         if key:
             try:
                 s3.delete_object(Bucket=settings.S3_BUCKET_RAW, Key=key)

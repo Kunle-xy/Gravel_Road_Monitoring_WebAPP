@@ -5,11 +5,11 @@ Orchestrates the full pipeline: extract polygon extent from GeoTIFF,
 detect ruts, generate plots/reports, upload to S3, and update the database.
 """
 
+import json
 import os
 import tempfile
 import logging
 from datetime import datetime
-from typing import Optional
 
 import boto3
 
@@ -20,7 +20,7 @@ from app.config import settings
 
 from app.workers.rut.geo import extract_polygon_extent
 from app.workers.rut.detection import analyze_ruts_in_polygon
-from app.workers.rut.report import generate_html_plot, generate_pdf_from_results
+from app.workers.rut.report import generate_html_plot
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ s3_client = boto3.client('s3', region_name=settings.AWS_REGION)
 
 
 @celery_app.task(bind=True, name="app.workers.rut_worker.analyze_ruts_task")
-def analyze_ruts_task(self, job_id: str, screenshot_base64: Optional[str] = None):
+def analyze_ruts_task(self, job_id: str):
     """
     Celery task to analyze ruts in a polygon.
     Extracts only the polygon extent from the cloud-stored GeoTIFF.
@@ -53,10 +53,8 @@ def analyze_ruts_task(self, job_id: str, screenshot_base64: Optional[str] = None
         1. Load job + TIFF metadata from DB
         2. Extract polygon extent from S3-hosted GeoTIFF
         3. Run rut detection along sampling lines
-        4. Generate interactive HTML plot
-        5. Generate multi-page PDF report
-        6. Upload results to S3
-        7. Update job record in DB
+        4. Generate interactive HTML plot and upload to S3
+        5. Update job record in DB
     """
     db = SessionLocal()
 
@@ -130,40 +128,56 @@ def analyze_ruts_task(self, job_id: str, screenshot_base64: Optional[str] = None
         finally:
             os.unlink(tmp_path)
 
-        # Step 5: Generate and upload PDF
-        job.progress = 92
-        db.commit()
-
-        pdf_s3_key = None
-        pdf_url = None
+        # Step 4b: Build a GeoJSON FeatureCollection of the detected ruts and
+        # upload it to S3. The frontend toggles this as a Leaflet layer.
+        geojson_s3_key = None
+        geojson_url = None
         try:
-            pdf_bytes = generate_pdf_from_results(results, job_id, screenshot_base64)
-            pdf_s3_key = f"rut_analysis/{job.user_id}/{job_id}/report.pdf"
+            features = []
+            for rut in results.get('ruts') or []:
+                ring = rut.get('rect_coords')
+                if not ring or len(ring) < 4:
+                    continue
+                features.append({
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'Polygon',
+                        'coordinates': [ring],
+                    },
+                    'properties': {
+                        'severity': rut.get('severity'),
+                        'depth_in': rut.get('rut_depth_in'),
+                        'area_sqft': rut.get('rut_area_sqft'),
+                        'line_x': rut.get('line_x'),
+                        'frequency': rut.get('frequency'),
+                    },
+                })
+            feature_collection = {'type': 'FeatureCollection', 'features': features}
 
-            with tempfile.NamedTemporaryFile(mode='wb', suffix='.pdf', delete=False) as tmp_pdf:
-                tmp_pdf.write(pdf_bytes)
-                tmp_pdf_path = tmp_pdf.name
-
+            geojson_s3_key = f"rut_analysis/{job.user_id}/{job_id}/features.geojson"
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False) as tmp_gj:
+                json.dump(feature_collection, tmp_gj)
+                tmp_gj_path = tmp_gj.name
             try:
-                s3_client.upload_file(tmp_pdf_path, settings.S3_BUCKET_RAW, pdf_s3_key,
-                                      ExtraArgs={'ContentType': 'application/pdf'})
-                pdf_url = s3_client.generate_presigned_url(
+                s3_client.upload_file(tmp_gj_path, settings.S3_BUCKET_RAW, geojson_s3_key,
+                                      ExtraArgs={'ContentType': 'application/geo+json'})
+                geojson_url = s3_client.generate_presigned_url(
                     'get_object',
-                    Params={'Bucket': settings.S3_BUCKET_RAW, 'Key': pdf_s3_key},
-                    ExpiresIn=604800
+                    Params={'Bucket': settings.S3_BUCKET_RAW, 'Key': geojson_s3_key},
+                    ExpiresIn=604800,
                 )
-                logger.info(f"Job {job_id}: PDF uploaded to S3: {pdf_s3_key}")
+                logger.info(f"Job {job_id}: Features GeoJSON uploaded ({len(features)} features)")
             finally:
-                os.unlink(tmp_pdf_path)
-        except Exception as pdf_error:
-            logger.error(f"Job {job_id}: PDF generation failed, but continuing: {str(pdf_error)}")
+                os.unlink(tmp_gj_path)
+        except Exception as gj_err:
+            logger.error(f"Job {job_id}: Features GeoJSON upload failed, continuing: {gj_err}")
 
-        # Step 6: Update job with results
+        # Step 5: Update job with results
         job.results_json = results
         job.html_plot_s3_key = html_s3_key
         job.html_plot_url = html_url
-        job.pdf_plot_s3_key = pdf_s3_key
-        job.pdf_plot_url = pdf_url
+        job.features_geojson_s3_key = geojson_s3_key
+        job.features_geojson_url = geojson_url
         job.total_ruts_detected = results['total_ruts_detected']
         job.low_severity_count = results['low_severity_count']
         job.medium_severity_count = results['medium_severity_count']

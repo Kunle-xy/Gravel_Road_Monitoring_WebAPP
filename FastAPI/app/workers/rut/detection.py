@@ -11,6 +11,7 @@ from typing import Dict, List, Any
 
 import numpy as np
 import pandas as pd
+from pyproj import Transformer
 from rasterio.transform import rowcol
 from shapely.geometry import Polygon, LineString
 
@@ -96,6 +97,7 @@ def detect_ruts_along_line(
                     h2 = df_input["depth"].iloc[idx_h2]
                     right_height = h2 - low
 
+                    # IowaDOT method: average of two shoulder peaks minus the valley
                     avg_shoulder = 0.5 * (h1 + h2)
                     rut_depth_m = avg_shoulder - low
                     rut_depth_in = rut_depth_m * inches_per_meter
@@ -134,6 +136,52 @@ def detect_ruts_along_line(
 
         direction_prev = direction
 
+    # End-of-profile closure (matches RUT-IOWADOT.pyt):
+    # If we ended on an UP trend without a final UP→DOWN transition, the last
+    # peak is still in peak_indices but never triggered the rut check.
+    # Use min(h1, h2) for the closure since the right shoulder is the last
+    # observed peak rather than a true crest.
+    if left_height is not None and peak_indices:
+        valid_peaks = [i for i in peak_indices if i > idx_low]
+        if valid_peaks:
+            peak_heights_valid = [peak_heights[peak_indices.index(i)] for i in valid_peaks]
+            max_peak_idx = peak_heights_valid.index(max(peak_heights_valid))
+            idx_h2 = valid_peaks[max_peak_idx]
+            h2 = df_input["depth"].iloc[idx_h2]
+            right_height = h2 - low
+
+            avg_shoulder = min(h1, h2)  # lower shoulder for the end case
+            rut_depth_m = avg_shoulder - low
+            rut_depth_in = rut_depth_m * inches_per_meter
+
+            if (idx_h2 > idx_low > idx_h1 and
+                (min(left_height, right_height) >= 0.1 * max(left_height, right_height)) and
+                rut_depth_m >= min_depth_diff and
+                (idx_h2 - idx_h1 - 1) > min_points_between):
+
+                width = (idx_h2 - idx_h1) * dy
+                rut_area = width * dx
+                rut_area_sqft = rut_area * sqm_to_sqft
+
+                severity = None
+                if 0.5 < rut_depth_in < 1.0:
+                    severity = "Low"
+                elif 1.0 <= rut_depth_in <= 3.0:
+                    severity = "Medium"
+                elif rut_depth_in > 3.0:
+                    severity = "High"
+
+                if severity:
+                    res.append({
+                        'idx_h1': int(idx_h1),
+                        'idx_low': int(idx_low),
+                        'idx_h2': int(idx_h2),
+                        'rut_depth_m': float(rut_depth_m),
+                        'rut_depth_in': float(rut_depth_in),
+                        'rut_area_sqft': float(rut_area_sqft),
+                        'severity': severity
+                    })
+
     return res
 
 
@@ -158,6 +206,9 @@ def analyze_ruts_in_polygon(
     polygon_area_sqft = polygon_area_sqm * 10.7639
     logger.info(f"Job {job_id}: Polygon area = {polygon_area_sqft:.2f} sq ft")
 
+    # Build transformer to reproject rut coordinates to WGS84 for the map overlay
+    to_wgs84 = Transformer.from_crs(metadata['crs'], "EPSG:4326", always_xy=True)
+
     if neighbor_eval:
         start_freq = max(1, dy_freq - neighbor_range)
         end_freq = dy_freq + neighbor_range
@@ -170,6 +221,7 @@ def analyze_ruts_in_polygon(
     frequency_results = {}
     all_ruts_all_freq = []
     cross_sections = []
+    MAX_PROFILE_PLOTS = 20
 
     for freq in frequencies:
         pix_m = float(np.mean(np.abs(metadata['resolution'])))
@@ -181,7 +233,6 @@ def analyze_ruts_in_polygon(
         x_steps = np.arange(min_x, max_x + dx, dx)
 
         freq_ruts = []
-        max_cross_sections = 30
 
         for line_idx, x in enumerate(x_steps):
             if line_idx % 100 == 0:
@@ -221,22 +272,57 @@ def analyze_ruts_in_polygon(
 
             depths_filtered = [d for d, m in zip(depths, mask) if m]
             distances_filtered = [distances[i] for i, m in enumerate(mask) if m]
+            points_filtered = [sample_points[i] for i, m in enumerate(mask) if m]
 
-            if freq == dy_freq and len(cross_sections) < max_cross_sections:
+            ruts = detect_ruts_along_line(depths_filtered, dy, dx)
+
+            half_dx = dx / 2.0
+            for rut in ruts:
+                rut['line_x'] = float(x)
+                rut['frequency'] = freq
+                # Build a rectangle footprint in the DEM CRS: length = h1→h2
+                # along the (vertical) sampling line, width = dx centered on the
+                # line. Reproject the four corners to WGS84 so the frontend can
+                # draw a polygon directly.
+                try:
+                    p_h1 = points_filtered[rut['idx_h1']]
+                    p_h2 = points_filtered[rut['idx_h2']]
+                    y_min, y_max = (p_h1.y, p_h2.y) if p_h1.y <= p_h2.y else (p_h2.y, p_h1.y)
+                    corners_proj = [
+                        (x - half_dx, y_min),
+                        (x + half_dx, y_min),
+                        (x + half_dx, y_max),
+                        (x - half_dx, y_max),
+                        (x - half_dx, y_min),
+                    ]
+                    rut['rect_coords'] = [
+                        [float(lon), float(lat)]
+                        for lon, lat in (to_wgs84.transform(cx, cy) for cx, cy in corners_proj)
+                    ]
+                except Exception as e:
+                    logger.warning(f"Job {job_id}: failed to build rut rectangle: {e}")
+                freq_ruts.append(rut)
+                all_ruts_all_freq.append(rut)
+
+            # Save cross-sections that contain at least one rut so the report
+            # can show where they are. Only for the user-selected frequency.
+            if freq == dy_freq and ruts:
                 cross_sections.append({
                     'line_idx': line_idx,
                     'x': float(x),
                     'distances': [float(d) for d in distances_filtered],
-                    'elevations': [float(e) for e in depths_filtered]
+                    'elevations': [float(e) for e in depths_filtered],
+                    'ruts': [
+                        {
+                            'idx_h1': r['idx_h1'],
+                            'idx_low': r['idx_low'],
+                            'idx_h2': r['idx_h2'],
+                            'severity': r['severity'],
+                            'rut_depth_in': r['rut_depth_in'],
+                        }
+                        for r in ruts
+                    ],
                 })
-
-            ruts = detect_ruts_along_line(depths_filtered, dy, dx)
-
-            for rut in ruts:
-                rut['line_x'] = float(x)
-                rut['frequency'] = freq
-                freq_ruts.append(rut)
-                all_ruts_all_freq.append(rut)
 
         total_ruts = len(freq_ruts)
         low_count = sum(1 for r in freq_ruts if r['severity'] == 'Low')
@@ -278,7 +364,15 @@ def analyze_ruts_in_polygon(
         }
 
     logger.info(f"Job {job_id}: Density and deduct values calculated")
-    logger.info(f"Job {job_id}: Saved {len(cross_sections)} cross-sections for plotting")
+
+    # Evenly sample up to MAX_PROFILE_PLOTS cross-sections for the report
+    total_cs = len(cross_sections)
+    if total_cs > MAX_PROFILE_PLOTS:
+        idxs = np.linspace(0, total_cs - 1, MAX_PROFILE_PLOTS, dtype=int).tolist()
+        cross_sections = [cross_sections[i] for i in idxs]
+        logger.info(f"Job {job_id}: Downsampled {total_cs} cross-sections to {len(cross_sections)} for plotting")
+    else:
+        logger.info(f"Job {job_id}: Saved {len(cross_sections)} cross-sections for plotting")
 
     return {
         'ruts': primary_results['ruts'],
@@ -291,5 +385,6 @@ def analyze_ruts_in_polygon(
         'density_data': density_data,
         'cross_sections': cross_sections,
         'neighbor_eval': neighbor_eval,
+        'primary_frequency': dy_freq,
         'frequency_results': frequency_results if neighbor_eval else None
     }

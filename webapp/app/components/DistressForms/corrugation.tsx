@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
 import { usePolygons } from "@/app/contexts/PolygonContext";
-import html2canvas from "html2canvas";
+import html2canvas from "html2canvas-pro";
 
 function RowGrid({ label, control }: { label: React.ReactNode; control: React.ReactNode }) {
   return (

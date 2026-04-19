@@ -10,7 +10,7 @@ Modules:
     geo         — GeoTIFF polygon extraction and spatial utilities
     detection   — Rut detection along sampling lines and polygon analysis
     plots       — Plotly figure generation (cross-sections, deduct curves)
-    report      — HTML and PDF report generation
+    report      — HTML report generation
     task        — Celery task definition (analyze_ruts_task)
 """
 

@@ -1,10 +1,11 @@
 // app/components/DistressForms/rut.tsx
 "use client";
-import React, { useState, useEffect } from "react";
-import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Download } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
+import L from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
 import { usePolygons } from "@/app/contexts/PolygonContext";
-import html2canvas from "html2canvas";
+import { useMap } from "@/app/contexts/MapContext";
 
 function RowGrid({
   label,
@@ -102,9 +103,15 @@ interface AnalysisResults {
   high_severity_count: number;
   total_area_sqft: number;
   html_plot_url?: string;
-  pdf_plot_url?: string;
+  features_geojson_url?: string;
   error_message?: string;
 }
+
+const SEVERITY_COLORS: Record<string, string> = {
+  Low: "#16a34a",
+  Medium: "#eab308",
+  High: "#dc2626",
+};
 
 export default function RutForm() {
   // DEM file selection
@@ -117,10 +124,10 @@ export default function RutForm() {
   const [selectedPolygonId, setSelectedPolygonId] = useState<string>("");
 
   // Analysis parameters
-  const [sampling, setSampling] = useState(3);
-  const [ruttingWidth, setRuttingWidth] = useState(0.1);
+  const [sampling, setSampling] = useState(20);
+  const [ruttingWidth, setRuttingWidth] = useState(0.05);
   const [gaussian, setGaussian] = useState(false);
-  const [sigma, setSigma] = useState(1.0);
+  const [sigma, setSigma] = useState(5.0);
   const [neighborEval, setNeighborEval] = useState(false);
   const [neighborRange, setNeighborRange] = useState(2);
 
@@ -129,6 +136,12 @@ export default function RutForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisResults | null>(null);
+
+  // Map overlay (detected ruts as colored line features)
+  const { map } = useMap();
+  const overlayLayerRef = useRef<L.GeoJSON | null>(null);
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [overlayLoading, setOverlayLoading] = useState(false);
 
   const inputBox =
     "w-28 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-center text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
@@ -140,6 +153,82 @@ export default function RutForm() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   };
+
+  const clearRutOverlay = React.useCallback(() => {
+    if (overlayLayerRef.current && map) {
+      map.removeLayer(overlayLayerRef.current);
+    }
+    overlayLayerRef.current = null;
+  }, [map]);
+
+  const handleToggleOverlay = async () => {
+    if (overlayOn) {
+      clearRutOverlay();
+      setOverlayOn(false);
+      return;
+    }
+    if (!map) {
+      showToast("Map not ready yet", "error");
+      return;
+    }
+    if (!results?.features_geojson_url) {
+      showToast("No rut features available for this job", "error");
+      return;
+    }
+    setOverlayLoading(true);
+    try {
+      const res = await fetch(results.features_geojson_url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const gj = await res.json();
+      const layer = L.geoJSON(gj, {
+        style: (feature) => {
+          const sev = feature?.properties?.severity as string | undefined;
+          const fill = (sev && SEVERITY_COLORS[sev]) || "#888";
+          return {
+            weight: 0,
+            stroke: false,
+            fillColor: fill,
+            fillOpacity: 0.65,
+          };
+        },
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties ?? {};
+          const color = SEVERITY_COLORS[p.severity as string] || "#333";
+          lyr.bindPopup(
+            `<div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;">
+              <strong style="color:${color}">${p.severity ?? ""}</strong><br/>
+              Depth: ${typeof p.depth_in === "number" ? p.depth_in.toFixed(2) : "?"} in<br/>
+              Area: ${typeof p.area_sqft === "number" ? p.area_sqft.toFixed(2) : "?"} ft²<br/>
+              Line x: ${typeof p.line_x === "number" ? p.line_x.toFixed(2) : "?"} m<br/>
+              Frequency: ${p.frequency ?? "?"}
+            </div>`
+          );
+        },
+      }).addTo(map);
+      overlayLayerRef.current = layer;
+      try {
+        const b = layer.getBounds();
+        if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+      } catch {
+        /* no bounds, skip fit */
+      }
+      setOverlayOn(true);
+    } catch (e) {
+      console.error("Failed to load rut overlay", e);
+      showToast("Failed to load rut overlay", "error");
+    } finally {
+      setOverlayLoading(false);
+    }
+  };
+
+  // Remove overlay on unmount
+  useEffect(() => () => clearRutOverlay(), [clearRutOverlay]);
+
+  // Clear the overlay whenever a new analysis starts or the selected job changes
+  useEffect(() => {
+    clearRutOverlay();
+    setOverlayOn(false);
+  }, [jobId, clearRutOverlay]);
 
   // Fetch user's DEM files on mount
   useEffect(() => {
@@ -294,23 +383,6 @@ export default function RutForm() {
     setJobId(null);
 
     try {
-      // Capture screenshot before analysis
-      let screenshotBase64 = null;
-      try {
-        showToast("Capturing screenshot...", "info");
-        const canvas = await html2canvas(document.body, {
-          allowTaint: true,
-          useCORS: true,
-          scale: 1,
-          windowWidth: window.innerWidth,
-          windowHeight: window.innerHeight,
-        });
-        screenshotBase64 = canvas.toDataURL("image/png").split(",")[1]; // Get base64 without the data:image/png;base64, prefix
-      } catch (screenshotError) {
-        console.error("Failed to capture screenshot:", screenshotError);
-        // Continue without screenshot
-      }
-
       // Get polygon from context
       const selectedPolygon = polygons.find(p => p.id === selectedPolygonId);
       if (!selectedPolygon) {
@@ -331,7 +403,6 @@ export default function RutForm() {
           gaussian_sigma: sigma,
           neighbor_eval: neighborEval,
           neighbor_range: neighborRange,
-          screenshot_base64: screenshotBase64,
         }),
       });
 
@@ -564,7 +635,7 @@ export default function RutForm() {
                 <div className="font-semibold text-slate-100">{results.total_area_sqft.toFixed(2)} ft²</div>
               </div>
 
-              <div className="flex gap-2 mt-3">
+              <div className="flex gap-2 mt-3 flex-wrap">
                 {results.html_plot_url && (
                   <a
                     href={results.html_plot_url}
@@ -577,15 +648,28 @@ export default function RutForm() {
                   </a>
                 )}
 
-                {results.pdf_plot_url && (
-                  <a
-                    href={results.pdf_plot_url}
-                    download
-                    className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-[12px] font-medium hover:bg-green-700 transition-colors shadow-lg"
+                {results.features_geojson_url && (
+                  <button
+                    type="button"
+                    onClick={handleToggleOverlay}
+                    disabled={overlayLoading}
+                    className={`flex items-center justify-center gap-1.5 flex-1 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors shadow-lg ${
+                      overlayOn
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "bg-slate-700 text-slate-100 hover:bg-slate-600"
+                    } disabled:opacity-60 disabled:cursor-not-allowed`}
+                    aria-pressed={overlayOn}
+                    title={overlayOn ? "Hide detected ruts on the map" : "Show detected ruts on the map"}
                   >
-                    <Download size={14} />
-                    Download PDF Report
-                  </a>
+                    {overlayLoading ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : overlayOn ? (
+                      <EyeOff size={14} />
+                    ) : (
+                      <Eye size={14} />
+                    )}
+                    {overlayOn ? "Hide Ruts on Map" : "Show Ruts on Map"}
+                  </button>
                 )}
               </div>
             </div>
