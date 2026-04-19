@@ -2,7 +2,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
-import L from "leaflet";
+import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
 import { usePolygons } from "@/app/contexts/PolygonContext";
 import { useMap } from "@/app/contexts/MapContext";
@@ -139,7 +139,7 @@ export default function RutForm() {
 
   // Map overlay (detected ruts as colored line features)
   const { map } = useMap();
-  const overlayLayerRef = useRef<L.GeoJSON | null>(null);
+  const overlayLayerRef = useRef<LeafletGeoJSON | null>(null);
   const [overlayOn, setOverlayOn] = useState(false);
   const [overlayLoading, setOverlayLoading] = useState(false);
 
@@ -180,6 +180,7 @@ export default function RutForm() {
       const res = await fetch(results.features_geojson_url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const gj = await res.json();
+      const L = (await import("leaflet")).default;
       const layer = L.geoJSON(gj, {
         style: (feature) => {
           const sev = feature?.properties?.severity as string | undefined;
