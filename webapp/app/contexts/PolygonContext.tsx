@@ -13,6 +13,7 @@ export interface DrawnPolygon {
 interface PolygonContextType {
   polygons: DrawnPolygon[];
   addPolygon: (polygon: Omit<DrawnPolygon, 'id' | 'createdAt'>) => DrawnPolygon;
+  updatePolygon: (id: string, patch: Partial<Omit<DrawnPolygon, 'id' | 'createdAt'>>) => void;
   removePolygon: (id: string) => void;
   clearPolygons: () => void;
   getPolygon: (id: string) => DrawnPolygon | undefined;
@@ -34,6 +35,10 @@ export function PolygonProvider({ children }: { children: React.ReactNode }) {
     return newPolygon;
   }, []);
 
+  const updatePolygon = useCallback((id: string, patch: Partial<Omit<DrawnPolygon, 'id' | 'createdAt'>>) => {
+    setPolygons((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }, []);
+
   const removePolygon = useCallback((id: string) => {
     setPolygons((prev) => prev.filter((p) => p.id !== id));
   }, []);
@@ -51,6 +56,7 @@ export function PolygonProvider({ children }: { children: React.ReactNode }) {
       value={{
         polygons,
         addPolygon,
+        updatePolygon,
         removePolygon,
         clearPolygons,
         getPolygon,
