@@ -10,10 +10,6 @@ echo "  Starting All Celery Workers"
 echo "=========================================="
 echo ""
 
-# Activate conda environment
-source /home/oguntoye/miniconda3/etc/profile.d/conda.sh
-conda activate gravelRD
-
 # Create logs directory if it doesn't exist
 mkdir -p logs
 
@@ -55,7 +51,7 @@ echo ""
 
 # Start Tile Worker
 echo "3. Starting Tile Worker..."
-nohup /home/oguntoye/miniconda3/envs/gravelRD/bin/celery \
+nohup uv run celery \
     -A app.celery_app worker \
     --loglevel=info \
     --concurrency=2 \
@@ -80,7 +76,7 @@ echo ""
 
 # Start Rut Worker
 echo "4. Starting Rut Worker..."
-nohup /home/oguntoye/miniconda3/envs/gravelRD/bin/celery \
+nohup uv run celery \
     -A app.celery_app worker \
     --loglevel=info \
     --concurrency=2 \

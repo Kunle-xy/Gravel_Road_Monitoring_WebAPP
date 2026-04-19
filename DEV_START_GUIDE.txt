@@ -3,13 +3,13 @@ DEVELOPMENT ENVIRONMENT STARTUP
 ================================
 
 This project requires 3 terminals to run the full development environment.
+Python deps are managed by uv — no venv activation needed.
 
 -------------------
 TERMINAL 1: FastAPI Backend
 -------------------
 cd FastAPI
-source venv/bin/activate  # Or activate your virtual environment
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 The API will be available at: http://localhost:8000
 API docs available at: http://localhost:8000/docs
@@ -18,11 +18,7 @@ API docs available at: http://localhost:8000/docs
 TERMINAL 2: Celery Worker
 -------------------
 cd FastAPI
-source venv/bin/activate  # Or activate your virtual environment
-./run_celery_worker.sh
-
-# OR manually:
-celery -A app.celery_app worker --loglevel=info
+uv run celery -A app.celery_app worker --loglevel=info
 
 This handles background tasks like tile generation and file processing.
 
@@ -38,15 +34,15 @@ The webapp will be available at: http://localhost:3000 (or the port shown in ter
 -------------------
 NOTES
 -------------------
-- Make sure all dependencies are installed before starting
-- Ensure PostgreSQL/database is running
-- Check that environment variables are configured (.env files)
-- All three services must be running for full functionality
-- Stop services with Ctrl+C in each terminal
+- First time? Run `uv sync` in FastAPI/ to install Python deps.
+- Ensure PostgreSQL and Redis are running (sudo systemctl start postgresql redis-server).
+- Check that environment variables are configured (FastAPI/.env, webapp/.env.local).
+- All three services must be running for full functionality.
+- Stop services with Ctrl+C in each terminal.
 
 -------------------
 TROUBLESHOOTING
 -------------------
 - If ports are in use, check for existing processes: lsof -i :8000 or lsof -i :3000
-- If Celery fails, ensure Redis/RabbitMQ broker is running
-- Check individual component README files for specific setup requirements
+- If Celery fails, ensure Redis is running: redis-cli ping
+- If imports fail, re-sync deps: cd FastAPI && uv sync

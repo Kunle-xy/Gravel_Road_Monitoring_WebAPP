@@ -6,17 +6,9 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Run from FastAPI project root so uv finds pyproject.toml
+cd "$SCRIPT_DIR/.."
 
-# Activate conda environment (support both system conda locations)
-CONDA_SH="${CONDA_PREFIX:-$HOME/miniconda3}/etc/profile.d/conda.sh"
-if [ ! -f "$CONDA_SH" ]; then
-    CONDA_SH="$(conda info --base 2>/dev/null)/etc/profile.d/conda.sh"
-fi
-source "$CONDA_SH"
-conda activate gravelRD
-
-CELERY_BIN="$(which celery)"
 LOG_DIR="logs"
 
 mkdir -p "$LOG_DIR"
@@ -64,7 +56,7 @@ done
 
 # Start Tile Worker
 echo "[2/3] Starting Tile Worker..."
-nohup "$CELERY_BIN" \
+nohup uv run celery \
     -A app.celery_app worker \
     --loglevel=info \
     --concurrency=2 \
@@ -79,7 +71,7 @@ echo "  ✓ Tile worker started (PID: $!)"
 
 # Start Rut Worker
 echo "[3/3] Starting Rut Worker..."
-nohup "$CELERY_BIN" \
+nohup uv run celery \
     -A app.celery_app worker \
     --loglevel=info \
     --concurrency=2 \

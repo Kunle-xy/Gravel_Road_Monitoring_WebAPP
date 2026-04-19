@@ -1,13 +1,13 @@
 [Unit]
-Description=GravelRoad FastAPI
-After=network.target redis-server.service postgresql.service
-Requires=redis-server.service postgresql.service
+Description=Gravel Road FastAPI
+After=network.target postgresql.service redis-server.service
 
 [Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/GravelRoad_Iowa/FastAPI
-EnvironmentFile=/home/ubuntu/GravelRoad_Iowa/FastAPI/.env
-ExecStart=/home/ubuntu/GravelRoad_Iowa/FastAPI/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Type=simple
+User=oguntoye
+WorkingDirectory=/home/oguntoye/GravelRoad_Iowa/FastAPI
+EnvironmentFile=/home/oguntoye/GravelRoad_Iowa/FastAPI/.env
+ExecStart=/home/oguntoye/.local/bin/uv run gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8000 --workers 8 --max-requests 100 --max-requests-jitter 20
 Restart=always
 RestartSec=5
 
