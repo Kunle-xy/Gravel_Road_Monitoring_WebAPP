@@ -45,16 +45,19 @@ interface URCIRecord {
   created_at: string;
 }
 
-// Reference images under webapp/public/urci/. Missing files are hidden.
-const IMAGES: { file: string; caption: string }[] = [
-  { file: "/urci/cdv_curve.png",          caption: "Corrected deduct value (CDV) chart" },
-  { file: "/urci/deduct_rut.png",         caption: "Rut — deduct chart" },
-  { file: "/urci/deduct_crown.png",       caption: "Improper cross section — deduct chart" },
-  { file: "/urci/deduct_corrugation.png", caption: "Corrugations — deduct chart" },
-  { file: "/urci/deduct_dust.png",        caption: "Dust — deduct chart" },
-  { file: "/urci/deduct_pothole.png",     caption: "Potholes — deduct chart" },
-  { file: "/urci/severity_classes.png",   caption: "Severity classification key" },
-];
+interface ImageEntry {
+  file: string;
+  caption: string;
+}
+
+// Turn `cdv_curve.png` → "Cdv Curve" for the caption.
+function captionFromFilename(name: string): string {
+  return name
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function conditionBand(urci: number): { band: string; color: string } {
   if (urci >= 85) return { band: "Excellent", color: "#16a34a" };
@@ -75,11 +78,27 @@ export default function FinalURCIForm() {
   const [records, setRecords] = useState<URCIRecord[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(true);
   const [missing, setMissing] = useState<Set<string>>(new Set());
+  // Images auto-discovered from webapp/public/urci/ via /api/urci-images.
+  const [images, setImages] = useState<ImageEntry[]>([]);
   // Distresses the user has typed into — a row is "keyed" once onChange fires
   // for it, even if they keyed 0. Used to gate the reference chart until
   // every distress has been accounted for.
   const [touched, setTouched] = useState<Set<Distress>>(new Set());
   const allKeyed = touched.size >= DISTRESSES.length;
+
+  useEffect(() => {
+    fetch("/api/urci-images")
+      .then((r) => (r.ok ? r.json() : { files: [] }))
+      .then((data: { files?: string[] }) => {
+        const entries: ImageEntry[] = (data.files || []).map((f) => ({
+          // Encode path segments so spaces / punctuation in filenames work.
+          file: `/urci/${encodeURIComponent(f)}`,
+          caption: captionFromFilename(f),
+        }));
+        setImages(entries);
+      })
+      .catch(() => {});
+  }, []);
 
   // Derived: total deduct (ΣDV) and q (count of DVs ≥ 5, per IowaDOT/Army
   // Corps PCI convention — 5 is the threshold where a distress counts
@@ -251,19 +270,19 @@ export default function FinalURCIForm() {
           ({touched.size}/{DISTRESSES.length} keyed)
         </div>
       ) : (
-        IMAGES.some((img) => !missing.has(img.file)) && (
+        images.some((img) => !missing.has(img.file)) && (
           <div className="border-t border-slate-700 mt-3 pt-3">
             <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">
               Reference charts — trace ΣDV × q → CDV
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {IMAGES.map(({ file, caption }) =>
+            <div className={images.length === 1 ? "" : "grid grid-cols-2 gap-2"}>
+              {images.map(({ file, caption }) =>
                 missing.has(file) ? null : (
                   <figure key={file} className="m-0 min-w-0">
                     <img
                       src={file}
                       alt={caption}
-                      className="w-full h-auto max-h-40 object-contain rounded border border-slate-700 bg-slate-900"
+                      className="w-full h-auto max-h-72 object-contain rounded border border-slate-700 bg-slate-900"
                       onError={() =>
                         setMissing((prev) => {
                           if (prev.has(file)) return prev;
