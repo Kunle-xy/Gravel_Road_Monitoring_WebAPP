@@ -99,6 +99,12 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
         //     tile instead of fetching zooms that were never produced
         const maxNative = file.tile_max_zoom ?? 21;
         const minZoomAllowed = file.tile_min_zoom ?? 12;
+        // 1×1 transparent PNG — used when CloudFront 404s a tile (gdal2tiles
+        // skips fully-nodata edge tiles), so nothing renders in their place
+        // rather than the browser's broken-image icon.
+        const TRANSPARENT_PNG =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
         const layer = new L.TileLayer(tileUrl, {
           opacity: 0.8,
           bounds: tileBounds,
@@ -111,7 +117,17 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
           tileSize: 256,
           keepBuffer: 2,
           updateWhenIdle: false,
-          updateWhenZooming: true
+          updateWhenZooming: true,
+          errorTileUrl: TRANSPARENT_PNG,
+        });
+        // Silence console noise from individual tile 404s (they're expected
+        // near the DEM edge). Uncomment the console.warn line if you want to
+        // log which tiles are missing.
+        layer.on('tileerror', (e) => {
+          (e as unknown as { tile?: HTMLImageElement }).tile?.style?.setProperty(
+            'display', 'none',
+          );
+          // console.warn('tile missing:', (e as any).coords, (e as any).tile?.src);
         });
 
         // Register layer with context (doesn't show it yet)
