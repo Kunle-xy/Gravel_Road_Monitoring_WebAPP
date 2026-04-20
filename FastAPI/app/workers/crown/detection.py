@@ -21,7 +21,9 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
-from shapely.geometry import Polygon, LineString
+from pyproj import Transformer
+from shapely.geometry import Polygon, LineString, box, mapping
+from shapely.ops import transform as shp_transform
 from rasterio.transform import rowcol
 
 logger = logging.getLogger(__name__)
@@ -165,38 +167,55 @@ def detect_rut_severity(
     return best_sev, best_depth, best_idxs
 
 
-def crown_severity(avg_slope_pct: float, left_sign: str, right_sign: str, rut_sev: Optional[str]) -> Optional[str]:
-    """
-    Determine crown severity from slope and rut analysis.
-    Inverted crown (left negative, right positive) is always High.
-    """
+# Iowa DOT crown severity matrix — slope band × rut severity → crown severity.
+# Slope bands use absolute average cross-slope percent; "inverted" means left
+# side slopes down and right side slopes up (valley at centerline).
+_CROWN_MATRIX: Dict[Tuple[str, Optional[str]], Optional[str]] = {
+    ("inverted", None):     "High",
+    ("inverted", "Low"):    "High",
+    ("inverted", "Medium"): "High",
+    ("inverted", "High"):   "High",
+
+    (">6",       None):     None,
+    (">6",       "Low"):    None,
+    (">6",       "Medium"): "Low",
+    (">6",       "High"):   "Medium",
+
+    ("4to6",     None):     None,
+    ("4to6",     "Low"):    "Low",
+    ("4to6",     "Medium"): "Medium",
+    ("4to6",     "High"):   "High",
+
+    ("2to4",     None):     "Low",
+    ("2to4",     "Low"):    "Medium",
+    ("2to4",     "Medium"): "High",
+    ("2to4",     "High"):   "High",
+
+    ("0to2",     None):     "Medium",
+    ("0to2",     "Low"):    "High",
+    ("0to2",     "Medium"): "High",
+    ("0to2",     "High"):   "High",
+}
+
+
+def _slope_band(avg_slope_pct: float, left_sign: str, right_sign: str) -> str:
+    """Classify a profile into one of the matrix slope bands."""
     if left_sign == "-" and right_sign == "+":
-        return "High"
-    x = float(avg_slope_pct)
-    if x >= 4.0:
-        if rut_sev == "Medium":
-            return "Low"
-        if rut_sev == "High":
-            return "Medium"
-        return None
-    if 1.0 < x < 4.0:
-        if rut_sev == "Low":
-            return "Low"
-        if rut_sev == "Medium":
-            return "Medium"
-        if rut_sev == "High":
-            return "High"
-        return None
-    if 0.0 <= x <= 1.0:
-        if rut_sev is None:
-            return "Low"
-        if rut_sev == "Low":
-            return "Medium"
-        if rut_sev == "Medium":
-            return "High"
-        if rut_sev == "High":
-            return "High"
-    return None
+        return "inverted"
+    x = abs(float(avg_slope_pct)) if np.isfinite(avg_slope_pct) else 0.0
+    if x > 6.0:
+        return ">6"
+    if x > 4.0:
+        return "4to6"
+    if x > 2.0:
+        return "2to4"
+    return "0to2"
+
+
+def crown_severity(avg_slope_pct: float, left_sign: str, right_sign: str, rut_sev: Optional[str]) -> Optional[str]:
+    """Determine crown severity from slope band + rut severity via the Iowa DOT matrix."""
+    band = _slope_band(avg_slope_pct, left_sign, right_sign)
+    return _CROWN_MATRIX.get((band, rut_sev), None)
 
 
 def analyze_crown_in_polygon(
@@ -223,11 +242,34 @@ def analyze_crown_in_polygon(
     dx_feet = spacing_m * FEET_PER_METER
     xs = np.arange(min_x, max_x + spacing_m, spacing_m)
 
+    # Polygon "length" for the density column — the longer side of the
+    # minimum rotated rectangle, so a rotated road polygon still reports the
+    # along-road distance rather than the inflated axis-aligned bounding box.
+    try:
+        mrr = polygon.minimum_rotated_rectangle
+        mrr_coords = list(mrr.exterior.coords)[:4]
+        side_lengths = []
+        for i in range(4):
+            x1, y1 = mrr_coords[i]
+            x2, y2 = mrr_coords[(i + 1) % 4]
+            side_lengths.append(((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5)
+        polygon_length_m = float(max(side_lengths)) if side_lengths else 0.0
+    except Exception:
+        polygon_length_m = 0.0
+    polygon_length_ft = polygon_length_m * FEET_PER_METER
+
+    # Build a DEM-CRS → WGS84 transformer for the map-overlay strips
+    to_wgs84 = Transformer.from_crs(metadata['crs'], "EPSG:4326", always_xy=True)
+
+    def _project_geom(geom):
+        return shp_transform(lambda x, y, z=None: to_wgs84.transform(x, y), geom)
+
     def _run_once(f_val: int):
         dy_m = (100.0 / float(f_val)) * pix_m
         totals = {"Low": 0.0, "Medium": 0.0, "High": 0.0}
         counts = {"Low": 0, "Medium": 0, "High": 0}
         profiles = []
+        segments: List[Dict[str, Any]] = []  # one per classified line — for the map overlay
         sev_rank = {"Low": 1, "Medium": 2, "High": 3, None: 0}
 
         for line_idx, x in enumerate(xs):
@@ -268,6 +310,25 @@ def analyze_crown_in_polygon(
                 totals[crown] += dx_feet
                 counts[crown] += 1
 
+                # Build a WGS84 strip (spacing_m wide) clipped to the polygon
+                # for rendering on the map. Skip when crown is None — no overlay.
+                try:
+                    strip = box(x - spacing_m / 2.0, min_y, x + spacing_m / 2.0, max_y)
+                    clipped_strip = strip.intersection(polygon)
+                    if not clipped_strip.is_empty:
+                        wgs_strip = _project_geom(clipped_strip)
+                        segments.append({
+                            "line_idx": int(line_idx),
+                            "line_x": float(x),
+                            "severity": crown,
+                            "rut_sev": rut_sev,
+                            "rut_depth_in": float(rut_depth_in),
+                            "avg_slope_pct": float(m_avg) if not np.isnan(m_avg) else 0.0,
+                            "geometry": mapping(wgs_strip),
+                        })
+                except Exception as strip_err:
+                    logger.warning(f"Job {job_id}: failed to build crown strip at x={x}: {strip_err}")
+
             profiles.append({
                 'line_idx': line_idx,
                 'x': float(x),
@@ -289,7 +350,7 @@ def analyze_crown_in_polygon(
                          + int(round(abs(rut_depth_in) * 100)))
             })
 
-        return totals, counts, profiles
+        return totals, counts, profiles, segments
 
     if neighbor_eval:
         start_f = max(1, dy_freq - neighbor_range)
@@ -299,11 +360,12 @@ def analyze_crown_in_polygon(
 
         per_freq = []
         base_totals = base_counts = base_profiles = None
+        base_segments: List[Dict[str, Any]] = []
         for f_val in freq_list:
-            t, c, p = _run_once(f_val)
+            t, c, p, s = _run_once(f_val)
             per_freq.append((f_val, t, c))
             if f_val == dy_freq:
-                base_totals, base_counts, base_profiles = t, c, p
+                base_totals, base_counts, base_profiles, base_segments = t, c, p, s
 
         # Aggregate means/stds across frequencies
         means_ft = {}
@@ -321,14 +383,16 @@ def analyze_crown_in_polygon(
             'totals_ft': totals,
             'counts': counts,
             'profiles': profiles,
+            'all_segments': base_segments,
             'neighbor_eval': True,
             'means_ft': means_ft,
             'stds_ft': stds_ft,
             'freq_list': freq_list,
             'total_linear_ft': sum(totals.values()),
+            'polygon_length_ft': polygon_length_ft,
         }
     else:
-        totals, counts, profiles = _run_once(dy_freq)
+        totals, counts, profiles, segments = _run_once(dy_freq)
         profiles.sort(key=lambda d: d['rank'], reverse=True)
         profiles = profiles[:30]
 
@@ -339,6 +403,8 @@ def analyze_crown_in_polygon(
             'totals_ft': totals,
             'counts': counts,
             'profiles': profiles,
+            'all_segments': segments,
             'neighbor_eval': False,
             'total_linear_ft': sum(totals.values()),
+            'polygon_length_ft': polygon_length_ft,
         }

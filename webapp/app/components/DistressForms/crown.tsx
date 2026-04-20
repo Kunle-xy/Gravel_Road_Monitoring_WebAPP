@@ -1,10 +1,18 @@
 // app/components/DistressForms/crown.tsx
 "use client";
-import React, { useState, useEffect } from "react";
-import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
+import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
 import { usePolygons } from "@/app/contexts/PolygonContext";
+import { useMap } from "@/app/contexts/MapContext";
 import html2canvas from "html2canvas-pro";
+
+const CROWN_SEVERITY_COLORS: Record<string, string> = {
+  Low: "#16a34a",
+  Medium: "#eab308",
+  High: "#dc2626",
+};
 
 function RowGrid({ label, control }: { label: React.ReactNode; control: React.ReactNode }) {
   return (
@@ -56,7 +64,7 @@ interface AnalysisResults {
   id: string; status: string; progress: number;
   low_severity_ft: number; medium_severity_ft: number; high_severity_ft: number;
   total_linear_ft: number; low_count: number; medium_count: number; high_count: number;
-  html_report_url?: string; error_message?: string;
+  html_report_url?: string; features_geojson_url?: string; error_message?: string;
 }
 
 export default function CrownForm() {
@@ -67,10 +75,10 @@ export default function CrownForm() {
   const [selectedPolygonId, setSelectedPolygonId] = useState<string>("");
 
   // Parameters
-  const [spacing, setSpacing] = useState(0.2);
-  const [sampling, setSampling] = useState(10);
+  const [spacing, setSpacing] = useState(0.05);
+  const [sampling, setSampling] = useState(20);
   const [gaussian, setGaussian] = useState(false);
-  const [sigma, setSigma] = useState(1.0);
+  const [sigma, setSigma] = useState(3.0);
   const [neighborEval, setNeighborEval] = useState(false);
   const [neighborRange, setNeighborRange] = useState(2);
 
@@ -80,6 +88,12 @@ export default function CrownForm() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisResults | null>(null);
 
+  // Map overlay of classified crown strips
+  const { map } = useMap();
+  const overlayLayerRef = useRef<LeafletGeoJSON | null>(null);
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [overlayLoading, setOverlayLoading] = useState(false);
+
   const inputBox = "w-28 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-center text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
 
   const showToast = (message: string, type: Toast["type"] = "error") => {
@@ -87,6 +101,80 @@ export default function CrownForm() {
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   };
+
+  const clearCrownOverlay = React.useCallback(() => {
+    if (overlayLayerRef.current && map) {
+      map.removeLayer(overlayLayerRef.current);
+    }
+    overlayLayerRef.current = null;
+  }, [map]);
+
+  const handleToggleOverlay = async () => {
+    if (overlayOn) {
+      clearCrownOverlay();
+      setOverlayOn(false);
+      return;
+    }
+    if (!map) {
+      showToast("Map not ready yet", "error");
+      return;
+    }
+    if (!results?.features_geojson_url) {
+      showToast("No crown features available for this job", "error");
+      return;
+    }
+    setOverlayLoading(true);
+    try {
+      const res = await fetch(results.features_geojson_url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const gj = await res.json();
+      const L = (await import("leaflet")).default;
+      const layer = L.geoJSON(gj, {
+        style: (feature) => {
+          const sev = feature?.properties?.severity as string | undefined;
+          const fill = (sev && CROWN_SEVERITY_COLORS[sev]) || "#888";
+          return {
+            weight: 0,
+            stroke: false,
+            fillColor: fill,
+            fillOpacity: 0.55,
+          };
+        },
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties ?? {};
+          const color = CROWN_SEVERITY_COLORS[p.severity as string] || "#333";
+          lyr.bindPopup(
+            `<div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;">
+              <strong style="color:${color}">Crown: ${p.severity ?? ""}</strong><br/>
+              Rut: ${p.rut_sev ?? "None"}${typeof p.rut_depth_in === "number" ? ` (${p.rut_depth_in.toFixed(2)} in)` : ""}<br/>
+              Avg slope: ${typeof p.avg_slope_pct === "number" ? p.avg_slope_pct.toFixed(2) : "?"} %<br/>
+              Line x: ${typeof p.line_x === "number" ? p.line_x.toFixed(2) : "?"} m
+            </div>`
+          );
+        },
+      }).addTo(map);
+      overlayLayerRef.current = layer;
+      try {
+        const b = layer.getBounds();
+        if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+      } catch {
+        /* no bounds, skip fit */
+      }
+      setOverlayOn(true);
+    } catch (e) {
+      console.error("Failed to load crown overlay", e);
+      showToast("Failed to load crown overlay", "error");
+    } finally {
+      setOverlayLoading(false);
+    }
+  };
+
+  useEffect(() => () => clearCrownOverlay(), [clearCrownOverlay]);
+
+  useEffect(() => {
+    clearCrownOverlay();
+    setOverlayOn(false);
+  }, [jobId, clearCrownOverlay]);
 
   // Fetch DEM files
   useEffect(() => {
@@ -336,14 +424,37 @@ export default function CrownForm() {
                 <div className="font-semibold text-red-400">{results.high_severity_ft.toFixed(1)} ft ({results.high_count} lines)</div>
               </div>
 
-              {results.html_report_url && (
-                <div className="mt-3">
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {results.html_report_url && (
                   <a href={results.html_report_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-[12px] font-medium hover:bg-blue-700 transition-colors shadow-lg">
+                    className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-[12px] font-medium hover:bg-blue-700 transition-colors shadow-lg">
                     <ExternalLink size={14} /> View Interactive Report
                   </a>
-                </div>
-              )}
+                )}
+                {results.features_geojson_url && (
+                  <button
+                    type="button"
+                    onClick={handleToggleOverlay}
+                    disabled={overlayLoading}
+                    className={`flex items-center justify-center gap-1.5 flex-1 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors shadow-lg ${
+                      overlayOn
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "bg-slate-700 text-slate-100 hover:bg-slate-600"
+                    } disabled:opacity-60 disabled:cursor-not-allowed`}
+                    aria-pressed={overlayOn}
+                    title={overlayOn ? "Hide crown strips on the map" : "Show crown strips on the map"}
+                  >
+                    {overlayLoading ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : overlayOn ? (
+                      <EyeOff size={14} />
+                    ) : (
+                      <Eye size={14} />
+                    )}
+                    {overlayOn ? "Hide Crown on Map" : "Show Crown on Map"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

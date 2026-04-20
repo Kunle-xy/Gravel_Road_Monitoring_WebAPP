@@ -271,10 +271,10 @@ class MultipartAbortRequest(BaseModel):
 class CrownAnalysisCreate(BaseModel):
     tiff_file_id: uuid_lib.UUID
     polygon_geojson: Dict[str, Any]
-    spacing_m: Optional[float] = 0.2
-    dy_freq: Optional[int] = 10
+    spacing_m: Optional[float] = 0.05
+    dy_freq: Optional[int] = 20
     apply_smoothing: Optional[bool] = False
-    gaussian_sigma: Optional[float] = 1.0
+    gaussian_sigma: Optional[float] = 3.0
     neighbor_eval: Optional[bool] = False
     neighbor_range: Optional[int] = 2
     screenshot_base64: Optional[str] = None
@@ -296,6 +296,7 @@ class CrownAnalysisResponse(BaseModel):
     celery_task_id: Optional[str] = None
     results_json: Optional[Dict[str, Any]] = None
     html_report_url: Optional[str] = None
+    features_geojson_url: Optional[str] = None
     low_severity_ft: float
     medium_severity_ft: float
     high_severity_ft: float
@@ -316,6 +317,7 @@ class CrownAnalysisStatusResponse(BaseModel):
     progress: int
     error_message: Optional[str] = None
     html_report_url: Optional[str] = None
+    features_geojson_url: Optional[str] = None
     low_severity_ft: float
     medium_severity_ft: float
     high_severity_ft: float

@@ -170,10 +170,10 @@ class CrownAnalysisJob(Base):
 
     # Analysis parameters
     polygon_geojson = Column(JSON, nullable=False)
-    spacing_m = Column(Float, default=0.2)  # Line spacing in meters
-    dy_freq = Column(Integer, default=10)  # Sampling frequency per 100 pixels
+    spacing_m = Column(Float, default=0.05)  # Line spacing in meters
+    dy_freq = Column(Integer, default=20)  # Sampling frequency per 100 pixels
     apply_smoothing = Column(Boolean, default=False)
-    gaussian_sigma = Column(Float, default=1.0)
+    gaussian_sigma = Column(Float, default=3.0)
     neighbor_eval = Column(Boolean, default=False)
     neighbor_range = Column(Integer, default=2)
 
@@ -187,6 +187,8 @@ class CrownAnalysisJob(Base):
     results_json = Column(JSON)
     html_report_s3_key = Column(String(500))
     html_report_url = Column(Text)
+    features_geojson_s3_key = Column(String(500))  # S3 key for crown strips GeoJSON overlay
+    features_geojson_url = Column(Text)  # Presigned URL for crown strips GeoJSON overlay
 
     # Statistics — linear feet by severity
     low_severity_ft = Column(Float, default=0.0)

@@ -5,6 +5,7 @@ Orchestrates: extract polygon extent → analyze crown slopes/ruts →
 generate HTML report → upload to S3 → update database.
 """
 
+import json
 import os
 import tempfile
 import logging
@@ -107,6 +108,47 @@ def analyze_crown_task(self, job_id: str, screenshot_base64: Optional[str] = Non
         finally:
             os.unlink(tmp_path)
 
+        # Step 4b: GeoJSON overlay of classified crown strips (one feature per
+        # sampling line with a non-None severity, clipped to the polygon).
+        geojson_s3_key = None
+        geojson_url = None
+        try:
+            features = []
+            for seg in results.get("all_segments") or []:
+                geom = seg.get("geometry")
+                if not geom:
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": geom,
+                    "properties": {
+                        "severity": seg.get("severity"),
+                        "rut_sev": seg.get("rut_sev"),
+                        "rut_depth_in": seg.get("rut_depth_in"),
+                        "avg_slope_pct": seg.get("avg_slope_pct"),
+                        "line_x": seg.get("line_x"),
+                    },
+                })
+            feature_collection = {"type": "FeatureCollection", "features": features}
+
+            geojson_s3_key = f"crown_analysis/{job.user_id}/{job_id}/features.geojson"
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".geojson", delete=False) as tmp_gj:
+                json.dump(feature_collection, tmp_gj)
+                tmp_gj_path = tmp_gj.name
+            try:
+                s3_client.upload_file(tmp_gj_path, settings.S3_BUCKET_RAW, geojson_s3_key,
+                                      ExtraArgs={"ContentType": "application/geo+json"})
+                geojson_url = s3_client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.S3_BUCKET_RAW, "Key": geojson_s3_key},
+                    ExpiresIn=604800,
+                )
+                logger.info(f"Job {job_id}: Crown GeoJSON uploaded ({len(features)} features)")
+            finally:
+                os.unlink(tmp_gj_path)
+        except Exception as gj_err:
+            logger.error(f"Job {job_id}: GeoJSON upload failed, continuing: {gj_err}")
+
         # Step 5: Update job with results
         totals = results['totals_ft']
         counts = results['counts']
@@ -114,6 +156,8 @@ def analyze_crown_task(self, job_id: str, screenshot_base64: Optional[str] = Non
         job.results_json = results
         job.html_report_s3_key = html_s3_key
         job.html_report_url = html_url
+        job.features_geojson_s3_key = geojson_s3_key
+        job.features_geojson_url = geojson_url
         job.low_severity_ft = totals.get('Low', 0.0)
         job.medium_severity_ft = totals.get('Medium', 0.0)
         job.high_severity_ft = totals.get('High', 0.0)

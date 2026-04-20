@@ -128,6 +128,7 @@ async def get_crown_analysis_status(
         progress=job.progress,
         error_message=job.error_message,
         html_report_url=job.html_report_url,
+        features_geojson_url=job.features_geojson_url,
         low_severity_ft=job.low_severity_ft,
         medium_severity_ft=job.medium_severity_ft,
         high_severity_ft=job.high_severity_ft,
@@ -153,7 +154,7 @@ async def delete_crown_analysis(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crown analysis job not found")
     import boto3, logging
     s3 = boto3.client("s3", region_name=settings.AWS_REGION)
-    for key in [job.html_report_s3_key]:
+    for key in [job.html_report_s3_key, job.features_geojson_s3_key]:
         if key:
             try:
                 s3.delete_object(Bucket=settings.S3_BUCKET_RAW, Key=key)
