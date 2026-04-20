@@ -2,14 +2,15 @@
 import React, { memo } from "react";
 import { useDistress } from "../contexts/DistressContext";
 
-const Distress: Array<'Rut' | 'Corrugation' | 'Crown' | 'Dust' | 'Potholes' | 'Loose Aggregate' | 'Drainage'> = [
+const Distress: Array<'Rut' | 'Corrugation' | 'Crown' | 'Dust' | 'Potholes' | 'Loose Aggregate' | 'Drainage' | 'Final URCI'> = [
   "Rut",
   "Corrugation",
   "Crown",
   "Dust",
   "Potholes",
   "Loose Aggregate",
-  "Drainage"
+  "Drainage",
+  "Final URCI",
 ];
 
 function DistressWidget() {

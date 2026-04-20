@@ -7,6 +7,7 @@ import CorrugationForm from './DistressForms/corrugation';
 import CrownForm from './DistressForms/crown';
 import DustForm from './DistressForms/dust';
 import PotholeForm from './DistressForms/pothole';
+import FinalURCIForm from './DistressForms/final_urci';
 
 const CloseButton = ({ onClick }: { onClick: () => void }) => (
   <button
@@ -53,6 +54,7 @@ const DistressFormsOverlay = () => {
         {activeDistress === 'Loose Aggregate' && <div className="text-slate-400 bg-slate-800 rounded-lg p-4">Loose Aggregate form coming soon...</div>}
         {activeDistress === 'Potholes' && <PotholeForm />}
         {activeDistress === 'Drainage' && <div className="text-slate-400 bg-slate-800 rounded-lg p-4">Drainage form coming soon...</div>}
+        {activeDistress === 'Final URCI' && <FinalURCIForm />}
       </div>
     </div>
   );

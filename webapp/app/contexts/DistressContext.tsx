@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-type DistressType = 'Rut' | 'Corrugation' | 'Loose Aggregate' | 'Crown' | 'Potholes' | 'Dust' | 'Drainage' | null;
+type DistressType = 'Rut' | 'Corrugation' | 'Loose Aggregate' | 'Crown' | 'Potholes' | 'Dust' | 'Drainage' | 'Final URCI' | null;
 
 interface DistressContextType {
   activeDistress: DistressType;
