@@ -75,15 +75,22 @@ export default function FinalURCIForm() {
   const [records, setRecords] = useState<URCIRecord[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(true);
   const [missing, setMissing] = useState<Set<string>>(new Set());
+  // Distresses the user has typed into — a row is "keyed" once onChange fires
+  // for it, even if they keyed 0. Used to gate the reference chart until
+  // every distress has been accounted for.
+  const [touched, setTouched] = useState<Set<Distress>>(new Set());
+  const allKeyed = touched.size >= DISTRESSES.length;
 
-  // Derived: total deduct (ΣDV) and q (count of DVs > 2).
+  // Derived: total deduct (ΣDV) and q (count of DVs ≥ 5, per IowaDOT/Army
+  // Corps PCI convention — 5 is the threshold where a distress counts
+  // meaningfully toward the corrected deduct value).
   const { totalDV, qValue } = useMemo(() => {
     let total = 0;
     let q = 0;
     for (const d of DISTRESSES) {
       const v = Number(dvs[d]) || 0;
       if (v > 0) total += v;
-      if (v > 2) q += 1;
+      if (v >= 5) q += 1;
     }
     return { totalDV: total, qValue: q };
   }, [dvs]);
@@ -112,6 +119,7 @@ export default function FinalURCIForm() {
   const handleSetDv = (d: Distress, raw: string) => {
     const n = Math.max(0, Math.min(100, Number(raw) || 0));
     setDvs((prev) => ({ ...prev, [d]: n }));
+    setTouched((prev) => (prev.has(d) ? prev : new Set(prev).add(d)));
   };
 
   const handleReset = () => {
@@ -120,6 +128,7 @@ export default function FinalURCIForm() {
     setFinalUrciInput("");
     setNotes("");
     setFlash(null);
+    setTouched(new Set());
   };
 
   const handleSave = async () => {
@@ -230,42 +239,49 @@ export default function FinalURCIForm() {
           <div className="text-[18px] font-bold text-slate-100 mt-0.5">{totalDV.toFixed(1)}</div>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded p-2">
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">q (DVs &gt; 2)</div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">q (DVs ≥ 5)</div>
           <div className="text-[18px] font-bold text-slate-100 mt-0.5">{qValue}</div>
         </div>
       </div>
 
-      {/* Reference charts */}
-      {IMAGES.some((img) => !missing.has(img.file)) && (
-        <div className="border-t border-slate-700 mt-3 pt-3">
-          <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">
-            Reference charts — trace ΣDV × q → CDV
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {IMAGES.map(({ file, caption }) =>
-              missing.has(file) ? null : (
-                <figure key={file} className="m-0 min-w-0">
-                  <img
-                    src={file}
-                    alt={caption}
-                    className="w-full h-auto max-h-40 object-contain rounded border border-slate-700 bg-slate-900"
-                    onError={() =>
-                      setMissing((prev) => {
-                        if (prev.has(file)) return prev;
-                        const next = new Set(prev);
-                        next.add(file);
-                        return next;
-                      })
-                    }
-                  />
-                  <figcaption className="text-[10px] text-slate-400 text-center mt-1">
-                    {caption}
-                  </figcaption>
-                </figure>
-              )
-            )}
-          </div>
+      {/* Reference charts — gated until every distress row has been keyed */}
+      {!allKeyed ? (
+        <div className="border-t border-slate-700 mt-3 pt-3 text-center text-[11px] text-slate-500 italic">
+          Enter a deduct value for each of the {DISTRESSES.length} distresses to reveal the CDV chart
+          ({touched.size}/{DISTRESSES.length} keyed)
         </div>
+      ) : (
+        IMAGES.some((img) => !missing.has(img.file)) && (
+          <div className="border-t border-slate-700 mt-3 pt-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">
+              Reference charts — trace ΣDV × q → CDV
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {IMAGES.map(({ file, caption }) =>
+                missing.has(file) ? null : (
+                  <figure key={file} className="m-0 min-w-0">
+                    <img
+                      src={file}
+                      alt={caption}
+                      className="w-full h-auto max-h-40 object-contain rounded border border-slate-700 bg-slate-900"
+                      onError={() =>
+                        setMissing((prev) => {
+                          if (prev.has(file)) return prev;
+                          const next = new Set(prev);
+                          next.add(file);
+                          return next;
+                        })
+                      }
+                    />
+                    <figcaption className="text-[10px] text-slate-400 text-center mt-1">
+                      {caption}
+                    </figcaption>
+                  </figure>
+                )
+              )}
+            </div>
+          </div>
+        )
       )}
 
       {/* Final URCI input + save */}
