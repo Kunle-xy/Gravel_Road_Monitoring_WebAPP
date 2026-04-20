@@ -80,6 +80,8 @@ export default function FinalURCIForm() {
   const [missing, setMissing] = useState<Set<string>>(new Set());
   // Images auto-discovered from webapp/public/urci/ via /api/urci-images.
   const [images, setImages] = useState<ImageEntry[]>([]);
+  // Click-to-zoom lightbox target (null = no image enlarged).
+  const [zoomed, setZoomed] = useState<ImageEntry | null>(null);
   // Distresses the user has typed into — a row is "keyed" once onChange fires
   // for it, even if they keyed 0. Used to gate the reference chart until
   // every distress has been accounted for.
@@ -134,6 +136,16 @@ export default function FinalURCIForm() {
   useEffect(() => {
     loadRecords();
   }, [loadRecords]);
+
+  // Close the zoomed lightbox on Escape.
+  useEffect(() => {
+    if (!zoomed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setZoomed(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [zoomed]);
 
   const handleSetDv = (d: Distress, raw: string) => {
     const n = Math.max(0, Math.min(100, Number(raw) || 0));
@@ -276,24 +288,32 @@ export default function FinalURCIForm() {
               Reference charts — trace ΣDV × q → CDV
             </div>
             <div className={images.length === 1 ? "" : "grid grid-cols-2 gap-2"}>
-              {images.map(({ file, caption }) =>
-                missing.has(file) ? null : (
-                  <figure key={file} className="m-0 min-w-0">
-                    <img
-                      src={file}
-                      alt={caption}
-                      className="w-full h-auto max-h-72 object-contain rounded border border-slate-700 bg-slate-900"
-                      onError={() =>
-                        setMissing((prev) => {
-                          if (prev.has(file)) return prev;
-                          const next = new Set(prev);
-                          next.add(file);
-                          return next;
-                        })
-                      }
-                    />
+              {images.map((img) =>
+                missing.has(img.file) ? null : (
+                  <figure key={img.file} className="m-0 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setZoomed(img)}
+                      className="block w-full cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-blue-400 rounded"
+                      aria-label={`Enlarge ${img.caption}`}
+                    >
+                      <img
+                        src={img.file}
+                        alt={img.caption}
+                        className="w-full h-auto max-h-72 object-contain rounded border border-slate-700 bg-slate-900"
+                        onError={() =>
+                          setMissing((prev) => {
+                            if (prev.has(img.file)) return prev;
+                            const next = new Set(prev);
+                            next.add(img.file);
+                            return next;
+                          })
+                        }
+                      />
+                    </button>
                     <figcaption className="text-[10px] text-slate-400 text-center mt-1">
-                      {caption}
+                      {img.caption}{" "}
+                      <span className="text-slate-600">· click to enlarge</span>
                     </figcaption>
                   </figure>
                 )
@@ -425,6 +445,40 @@ export default function FinalURCIForm() {
           </ul>
         )}
       </div>
+
+      {/* Click-to-zoom lightbox */}
+      {zoomed && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 cursor-zoom-out"
+          onClick={() => setZoomed(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomed(null);
+            }}
+            aria-label="Close enlarged image"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-slate-800/90 hover:bg-slate-700 text-white flex items-center justify-center text-xl font-bold shadow-lg"
+          >
+            ×
+          </button>
+          <figure className="max-w-[96vw] max-h-[96vh] flex flex-col items-center">
+            <img
+              src={zoomed.file}
+              alt={zoomed.caption}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-[90vh] object-contain rounded shadow-2xl cursor-zoom-out"
+            />
+            <figcaption className="text-center text-[12px] text-slate-200 mt-2">
+              {zoomed.caption}
+              <span className="text-slate-500"> · click outside or press Esc to close</span>
+            </figcaption>
+          </figure>
+        </div>
+      )}
     </div>
   );
 }
