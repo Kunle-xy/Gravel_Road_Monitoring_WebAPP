@@ -86,14 +86,22 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
 
         if (cancelled) return; // Don't continue if component unmounted
 
-        // Create simple tile layer - no authentication needed for CloudFront.
-        // Clamp fetches to what the tile worker actually generated so we don't
-        // request zoom levels above tile_max_zoom (those 404 and leave blank
-        // squares when the user zooms past the native max).
+        // Parse bounds from database (already validated they exist above)
+        const bounds: [[number, number], [number, number]] = [
+          [parseFloat(file.bounds_south!), parseFloat(file.bounds_west!)],
+          [parseFloat(file.bounds_north!), parseFloat(file.bounds_east!)]
+        ];
+        const tileBounds = L.latLngBounds(bounds);
+
+        // Create the tile layer. Two guards keep Leaflet from 404-ing:
+        //   - bounds: don't request tiles outside the DEM footprint
+        //   - maxNativeZoom / minNativeZoom: upscale past the deepest generated
+        //     tile instead of fetching zooms that were never produced
         const maxNative = file.tile_max_zoom ?? 21;
         const minZoomAllowed = file.tile_min_zoom ?? 12;
         const layer = new L.TileLayer(tileUrl, {
           opacity: 0.8,
+          bounds: tileBounds,
           maxZoom: 26,
           maxNativeZoom: maxNative,
           minNativeZoom: minZoomAllowed,
@@ -105,12 +113,6 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
           updateWhenIdle: false,
           updateWhenZooming: true
         });
-
-        // Parse bounds from database (already validated they exist above)
-        const bounds: [[number, number], [number, number]] = [
-          [parseFloat(file.bounds_south!), parseFloat(file.bounds_west!)],
-          [parseFloat(file.bounds_north!), parseFloat(file.bounds_east!)]
-        ];
 
         // Register layer with context (doesn't show it yet)
         addLayer(file.id, file.filename, file.file_type, layer, bounds);
