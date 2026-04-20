@@ -222,7 +222,7 @@ export default function DustForm() {
       <ToastContainer toasts={toasts} />
       <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[13px] text-slate-100 leading-tight ring-1 ring-slate-700/50">
         <h2 className="text-[14px] font-bold border-b border-slate-700 pb-2 mb-3 text-slate-200 text-center">
-          Object Detection (YOLO)
+          AI-based Dust Detection
         </h2>
 
         {/* === SETUP === */}
