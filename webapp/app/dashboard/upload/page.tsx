@@ -9,12 +9,37 @@ interface FolderOption {
   color: string;
 }
 
-type UploadStep = 'idle' | 'presigning' | 'uploading' | 'completing' | 'done' | 'error';
+type UploadStep = 'idle' | 'presigning' | 'uploading' | 'completing' | 'done' | 'error' | 'paused';
 
 // 100MB threshold — files above this use multipart upload
 const MULTIPART_THRESHOLD = 100 * 1024 * 1024;
 // 50MB per part for multipart uploads
 const PART_SIZE = 50 * 1024 * 1024;
+
+// Retry transient failures (presign, part upload). AWS multipart uploads
+// stay valid for 24 h, so a paused upload can resume any time within that.
+const PART_RETRY_ATTEMPTS = 3;
+const PART_RETRY_BACKOFF_MS = 1500;
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  attempts: number = PART_RETRY_ATTEMPTS,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      console.warn(`${label} failed (attempt ${i + 1}/${attempts}):`, e);
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, PART_RETRY_BACKOFF_MS * (i + 1)));
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -31,6 +56,18 @@ export default function UploadPage() {
   const abortRef = useRef(false);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const presignDataRef = useRef<{ upload_id: string; s3_key: string } | null>(null);
+  // In-flight multipart state — kept in a ref so a failed part can be resumed
+  // without re-initiating the S3 upload or re-uploading the earlier parts.
+  const multipartStateRef = useRef<{
+    file: File;
+    upload_id: string;
+    s3_key: string;
+    s3_upload_id: string;
+    totalParts: number;
+    completedParts: { part_number: number; etag: string }[];
+    uploadedBytes: number;
+    nextPart: number;  // first part that still needs uploading
+  } | null>(null);
 
   useEffect(() => {
     const fetchFolders = async () => {
@@ -162,53 +199,95 @@ export default function UploadPage() {
     const { upload_id, s3_key, s3_upload_id } = await initRes.json();
     presignDataRef.current = { upload_id, s3_key };
 
-    // Step 2: Upload parts
+    const totalParts = Math.ceil(file.size / PART_SIZE);
+    multipartStateRef.current = {
+      file,
+      upload_id,
+      s3_key,
+      s3_upload_id,
+      totalParts,
+      completedParts: [],
+      uploadedBytes: 0,
+      nextPart: 1,
+    };
+
     setStep('uploading');
     uploadStartRef.current = Date.now();
 
-    const totalParts = Math.ceil(file.size / PART_SIZE);
-    const completedParts: { part_number: number; etag: string }[] = [];
-    let uploadedBytes = 0;
+    await runMultipartLoop();
+  };
 
-    for (let partNum = 1; partNum <= totalParts; partNum++) {
+  // Walks through multipartStateRef.current.nextPart → totalParts, presigning
+  // + uploading each part with retries. On retry exhaustion sets step to
+  // 'paused' (not 'error') so the user can resume without restarting.
+  const runMultipartLoop = async () => {
+    const st = multipartStateRef.current;
+    if (!st) return;
+
+    while (st.nextPart <= st.totalParts) {
+      const partNum = st.nextPart;
       if (abortRef.current) throw new Error('Upload cancelled');
 
-      setStatusText(`Uploading part ${partNum}/${totalParts}...`);
+      setStatusText(`Uploading part ${partNum}/${st.totalParts}...`);
 
-      // Get presigned URL for this part
-      const presignRes = await fetchWithAuth(API_ENDPOINTS.FILES.MULTIPART_PRESIGN_PART, {
-        method: 'POST',
-        body: JSON.stringify({
-          s3_key,
-          s3_upload_id,
-          part_number: partNum,
-        }),
-      });
-      if (!presignRes.ok) throw new Error(`Failed to presign part ${partNum}`);
-      const { presigned_url } = await presignRes.json();
+      try {
+        const presigned_url = await withRetry(async () => {
+          const res = await fetchWithAuth(API_ENDPOINTS.FILES.MULTIPART_PRESIGN_PART, {
+            method: 'POST',
+            body: JSON.stringify({
+              s3_key: st.s3_key,
+              s3_upload_id: st.s3_upload_id,
+              part_number: partNum,
+            }),
+          });
+          if (!res.ok) throw new Error(`presign returned ${res.status}`);
+          const body = await res.json();
+          if (!body.presigned_url) throw new Error('presign returned no URL');
+          return body.presigned_url as string;
+        }, `presign part ${partNum}`);
 
-      // Slice file for this part
-      const start = (partNum - 1) * PART_SIZE;
-      const end = Math.min(start + PART_SIZE, file.size);
-      const blob = file.slice(start, end);
+        const start = (partNum - 1) * PART_SIZE;
+        const end = Math.min(start + PART_SIZE, st.file.size);
+        const blob = st.file.slice(start, end);
 
-      // Upload the part
-      const etag = await uploadPart(presigned_url, blob, partNum, totalParts, uploadedBytes);
-      completedParts.push({ part_number: partNum, etag });
-      uploadedBytes += blob.size;
+        const etag = await withRetry(
+          () => uploadPart(presigned_url, blob, partNum, st.totalParts, st.uploadedBytes),
+          `upload part ${partNum}`,
+        );
+
+        st.completedParts.push({ part_number: partNum, etag });
+        st.uploadedBytes += blob.size;
+        st.nextPart = partNum + 1;
+      } catch (e) {
+        // Retries exhausted — keep the state and hand control back to the user.
+        // The user can click Resume once the network/server recovers.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === 'Upload cancelled') throw e;
+        setError(`Part ${partNum} failed after ${PART_RETRY_ATTEMPTS} attempts: ${msg}. Click Resume to retry from part ${partNum}.`);
+        setStatusText(`Paused at part ${partNum}/${st.totalParts}`);
+        setStep('paused');
+        return;
+      }
     }
 
-    // Step 3: Complete multipart
+    // Everything uploaded — finalize.
+    await completeMultipart();
+  };
+
+  const completeMultipart = async () => {
+    const st = multipartStateRef.current;
+    if (!st) return;
+
     setStatusText('Finalizing multipart upload...');
     setStep('completing');
 
     const completeRes = await fetchWithAuth(API_ENDPOINTS.FILES.MULTIPART_COMPLETE, {
       method: 'POST',
       body: JSON.stringify({
-        upload_id,
-        s3_key,
-        s3_upload_id,
-        parts: completedParts,
+        upload_id: st.upload_id,
+        s3_key: st.s3_key,
+        s3_upload_id: st.s3_upload_id,
+        parts: st.completedParts,
       }),
     });
     if (!completeRes.ok) {
@@ -218,10 +297,25 @@ export default function UploadPage() {
 
     setStep('done');
     presignDataRef.current = null;
+    multipartStateRef.current = null;
     setTimeout(() => {
       setSelectedFile(null); setSelectedFolderId(null);
       setStep('idle'); setUploadProgress(0); setBytesUploaded(0);
     }, 3000);
+  };
+
+  // Called by the Resume button when the upload is in the 'paused' step.
+  const handleResume = async () => {
+    if (!multipartStateRef.current) return;
+    setError(null);
+    setStep('uploading');
+    abortRef.current = false;
+    try {
+      await runMultipartLoop();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Resume failed');
+      setStep('error');
+    }
   };
 
   // Single presigned PUT for small files
@@ -298,6 +392,7 @@ export default function UploadPage() {
   const handleCancel = () => {
     abortRef.current = true;
     if (xhrRef.current) xhrRef.current.abort();
+    multipartStateRef.current = null;
     setSelectedFile(null);
     setError(null);
     setStep('idle');
@@ -421,7 +516,19 @@ export default function UploadPage() {
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm text-white font-medium">{error}</p>
-                  {presignDataRef.current && (
+                  {step === 'paused' && multipartStateRef.current && (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={handleResume}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-md">
+                        Resume from part {multipartStateRef.current.nextPart}
+                      </button>
+                      <button onClick={handleCancel}
+                        className="px-3 py-1.5 border border-slate-500 hover:bg-slate-700 text-white text-xs rounded-md">
+                        Cancel upload
+                      </button>
+                    </div>
+                  )}
+                  {step !== 'paused' && presignDataRef.current && (
                     <button onClick={completeUpload} className="text-xs text-blue-400 hover:text-blue-300 mt-1 underline">
                       Retry confirmation
                     </button>
