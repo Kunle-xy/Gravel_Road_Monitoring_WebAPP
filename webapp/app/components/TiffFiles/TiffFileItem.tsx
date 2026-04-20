@@ -18,6 +18,8 @@ interface TiffFileItemProps {
     tile_url_template?: string;
     tile_error?: string;
     tile_progress?: number;
+    tile_min_zoom?: number;
+    tile_max_zoom?: number;
   };
   onDelete: (fileId: string, filename: string) => void;
 }
@@ -84,12 +86,18 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
 
         if (cancelled) return; // Don't continue if component unmounted
 
-        // Create simple tile layer - no authentication needed for CloudFront
+        // Create simple tile layer - no authentication needed for CloudFront.
+        // Clamp fetches to what the tile worker actually generated so we don't
+        // request zoom levels above tile_max_zoom (those 404 and leave blank
+        // squares when the user zooms past the native max).
+        const maxNative = file.tile_max_zoom ?? 21;
+        const minZoomAllowed = file.tile_min_zoom ?? 12;
         const layer = new L.TileLayer(tileUrl, {
           opacity: 0.8,
           maxZoom: 26,
-          maxNativeZoom: 23,
-          minZoom: 12,
+          maxNativeZoom: maxNative,
+          minNativeZoom: minZoomAllowed,
+          minZoom: Math.min(12, minZoomAllowed),
           attribution: file.filename,
           crossOrigin: 'anonymous',
           tileSize: 256,
@@ -128,7 +136,7 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
     return () => {
       cancelled = true;
     };
-  }, [map, file.id, file.filename, file.file_type, file.tile_status, file.tile_url_template, file.tile_error, file.tile_progress, file.bounds_south, file.bounds_west, file.bounds_north, file.bounds_east, layerExists, addLayer]);
+  }, [map, file.id, file.filename, file.file_type, file.tile_status, file.tile_url_template, file.tile_error, file.tile_progress, file.tile_min_zoom, file.tile_max_zoom, file.bounds_south, file.bounds_west, file.bounds_north, file.bounds_east, layerExists, addLayer]);
 
   const handleToggle = () => {
     // Instant toggle!
