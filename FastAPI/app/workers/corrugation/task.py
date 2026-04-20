@@ -5,6 +5,7 @@ Orchestrates: extract polygon extent → detect corrugations along transects →
 generate HTML report → upload to S3 → update database.
 """
 
+import json
 import os
 import tempfile
 import logging
@@ -77,7 +78,10 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
         results = analyze_corrugation_in_polygon(
             elevation_data, metadata, polygon,
             job.line_interval, job.dy_freq, job_id,
-            job.sigma_samples, job.neighbor_eval, job.neighbor_range
+            sigma_samples=job.sigma_samples,
+            min_drop_in=job.min_drop_in,
+            min_wavelength_m=job.min_wavelength_m,
+            max_wavelength_m=job.max_wavelength_m,
         )
 
         # Step 3: Generate HTML report
@@ -106,6 +110,47 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
         finally:
             os.unlink(tmp_path)
 
+        # Step 4b: Build + upload GeoJSON overlay of detected segments. Frontend
+        # toggles this as a Leaflet layer; primary-frequency segments only.
+        geojson_s3_key = None
+        geojson_url = None
+        try:
+            features = []
+            for seg in results.get("all_segments") or []:
+                ring = seg.get("rect_coords")
+                if not ring or len(ring) < 4:
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": [ring]},
+                    "properties": {
+                        "severity": seg.get("severity"),
+                        "depth_in": seg.get("depth_in"),
+                        "area_sqft": seg.get("area_ft2"),
+                        "transect_y": seg.get("transect_y"),
+                        "frequency": seg.get("frequency"),
+                    },
+                })
+            feature_collection = {"type": "FeatureCollection", "features": features}
+
+            geojson_s3_key = f"corrugation_analysis/{job.user_id}/{job_id}/features.geojson"
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".geojson", delete=False) as tmp_gj:
+                json.dump(feature_collection, tmp_gj)
+                tmp_gj_path = tmp_gj.name
+            try:
+                s3_client.upload_file(tmp_gj_path, settings.S3_BUCKET_RAW, geojson_s3_key,
+                                      ExtraArgs={"ContentType": "application/geo+json"})
+                geojson_url = s3_client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.S3_BUCKET_RAW, "Key": geojson_s3_key},
+                    ExpiresIn=604800,
+                )
+                logger.info(f"Job {job_id}: Corrugation GeoJSON uploaded ({len(features)} features)")
+            finally:
+                os.unlink(tmp_gj_path)
+        except Exception as gj_err:
+            logger.error(f"Job {job_id}: GeoJSON upload failed, continuing: {gj_err}")
+
         # Step 5: Update job
         totals = results["totals_ft2"]
         counts = results["counts"]
@@ -113,6 +158,8 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
         job.results_json = results
         job.html_report_s3_key = html_s3_key
         job.html_report_url = html_url
+        job.features_geojson_s3_key = geojson_s3_key
+        job.features_geojson_url = geojson_url
         job.low_area_ft2 = totals.get("LOW", 0.0)
         job.medium_area_ft2 = totals.get("MEDIUM", 0.0)
         job.high_area_ft2 = totals.get("HIGH", 0.0)

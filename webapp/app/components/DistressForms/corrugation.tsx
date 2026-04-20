@@ -1,10 +1,18 @@
 // app/components/DistressForms/corrugation.tsx
 "use client";
-import React, { useState, useEffect } from "react";
-import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
+import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
 import { usePolygons } from "@/app/contexts/PolygonContext";
+import { useMap } from "@/app/contexts/MapContext";
 import html2canvas from "html2canvas-pro";
+
+const SEVERITY_COLORS: Record<string, string> = {
+  LOW: "#16a34a",
+  MEDIUM: "#eab308",
+  HIGH: "#dc2626",
+};
 
 function RowGrid({ label, control }: { label: React.ReactNode; control: React.ReactNode }) {
   return (
@@ -54,7 +62,7 @@ interface AnalysisResults {
   id: string; status: string; progress: number;
   low_area_ft2: number; medium_area_ft2: number; high_area_ft2: number;
   total_area_ft2: number; low_count: number; medium_count: number; high_count: number;
-  html_report_url?: string; error_message?: string;
+  html_report_url?: string; features_geojson_url?: string; error_message?: string;
 }
 
 export default function CorrugationForm() {
@@ -64,18 +72,126 @@ export default function CorrugationForm() {
   const { polygons } = usePolygons();
   const [selectedPolygonId, setSelectedPolygonId] = useState("");
 
-  const [sampling, setSampling] = useState(10);
-  const [lineInterval, setLineInterval] = useState(0.1);
-  const [sigma, setSigma] = useState(2.0);
-  const [neighborEval, setNeighborEval] = useState(false);
-  const [neighborRange, setNeighborRange] = useState(2);
+  const [sampling, setSampling] = useState(20);
+  const [lineInterval, setLineInterval] = useState(0.05);
+  const [sigma, setSigma] = useState(3.0);
+  // Corrugation filters — cut sub-noise drops and unphysical crest-to-crest spans
+  const [minDropIn, setMinDropIn] = useState(0.25);
+  const [minWavelengthM, setMinWavelengthM] = useState(0.15);
+  const [maxWavelengthM, setMaxWavelengthM] = useState(0.6);
+  // Wavelength stays auto-derived from DEM resolution + sampling until the
+  // user manually edits either field; reset button rearms auto-prefill.
+  const [wavelengthDirty, setWavelengthDirty] = useState(false);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisResults | null>(null);
 
+  // Map overlay of detected corrugation segments
+  const { map } = useMap();
+  const overlayLayerRef = useRef<LeafletGeoJSON | null>(null);
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [overlayLoading, setOverlayLoading] = useState(false);
+
   const inputBox = "w-28 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-center text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
+
+  const clearCorrugationOverlay = React.useCallback(() => {
+    if (overlayLayerRef.current && map) {
+      map.removeLayer(overlayLayerRef.current);
+    }
+    overlayLayerRef.current = null;
+  }, [map]);
+
+  const handleToggleOverlay = async () => {
+    if (overlayOn) {
+      clearCorrugationOverlay();
+      setOverlayOn(false);
+      return;
+    }
+    if (!map) {
+      showToast("Map not ready yet", "error");
+      return;
+    }
+    if (!results?.features_geojson_url) {
+      showToast("No corrugation features available for this job", "error");
+      return;
+    }
+    setOverlayLoading(true);
+    try {
+      const res = await fetch(results.features_geojson_url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const gj = await res.json();
+      const L = (await import("leaflet")).default;
+      const layer = L.geoJSON(gj, {
+        style: (feature) => {
+          const sev = feature?.properties?.severity as string | undefined;
+          const fill = (sev && SEVERITY_COLORS[sev]) || "#888";
+          return {
+            weight: 0,
+            stroke: false,
+            fillColor: fill,
+            fillOpacity: 0.65,
+          };
+        },
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties ?? {};
+          const sev = String(p.severity ?? "").toUpperCase();
+          const color = SEVERITY_COLORS[sev] || "#333";
+          const label = sev.charAt(0) + sev.slice(1).toLowerCase();
+          lyr.bindPopup(
+            `<div style="font-family:Arial,sans-serif;font-size:12px;line-height:1.4;">
+              <strong style="color:${color}">${label}</strong><br/>
+              Depth: ${typeof p.depth_in === "number" ? p.depth_in.toFixed(2) : "?"} in<br/>
+              Area: ${typeof p.area_sqft === "number" ? p.area_sqft.toFixed(2) : "?"} ft²<br/>
+              Transect y: ${typeof p.transect_y === "number" ? p.transect_y.toFixed(2) : "?"} m<br/>
+              Frequency: ${p.frequency ?? "?"}
+            </div>`
+          );
+        },
+      }).addTo(map);
+      overlayLayerRef.current = layer;
+      try {
+        const b = layer.getBounds();
+        if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+      } catch {
+        /* no bounds, skip fit */
+      }
+      setOverlayOn(true);
+    } catch (e) {
+      console.error("Failed to load corrugation overlay", e);
+      showToast("Failed to load corrugation overlay", "error");
+    } finally {
+      setOverlayLoading(false);
+    }
+  };
+
+  useEffect(() => () => clearCorrugationOverlay(), [clearCorrugationOverlay]);
+
+  useEffect(() => {
+    clearCorrugationOverlay();
+    setOverlayOn(false);
+  }, [jobId, clearCorrugationOverlay]);
+
+  // Prefill wavelength bounds from DEM resolution + sampling frequency. Skip
+  // once the user has touched either input — their edits take precedence.
+  useEffect(() => {
+    if (!selectedDemId || wavelengthDirty) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithAuth(API_ENDPOINTS.CORRUGATION.AUTO_DEFAULTS(selectedDemId, sampling));
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (typeof data.min_wavelength_m === "number") setMinWavelengthM(data.min_wavelength_m);
+        if (typeof data.max_wavelength_m === "number") setMaxWavelengthM(data.max_wavelength_m);
+      } catch {
+        /* silent — fall back to whatever's in the form */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedDemId, sampling, wavelengthDirty]);
 
   const showToast = (message: string, type: Toast["type"] = "error") => {
     const id = Date.now();
@@ -133,6 +249,9 @@ export default function CorrugationForm() {
     if (!polygon) { showToast("Polygon not found"); return; }
     if (sampling <= 0) { showToast("Sampling frequency must be > 0"); return; }
     if (lineInterval <= 0) { showToast("Line interval must be > 0"); return; }
+    if (minDropIn < 0) { showToast("Min drop must be >= 0"); return; }
+    if (minWavelengthM <= 0) { showToast("Min wavelength must be > 0"); return; }
+    if (maxWavelengthM <= minWavelengthM) { showToast("Max wavelength must exceed min"); return; }
 
     setIsAnalyzing(true); setResults(null); setJobId(null);
 
@@ -151,8 +270,9 @@ export default function CorrugationForm() {
           dy_freq: sampling,
           line_interval: lineInterval,
           sigma_samples: sigma,
-          neighbor_eval: neighborEval,
-          neighbor_range: neighborRange,
+          min_drop_in: minDropIn,
+          min_wavelength_m: minWavelengthM,
+          max_wavelength_m: maxWavelengthM,
           screenshot_base64: screenshot,
         }),
       });
@@ -215,14 +335,27 @@ export default function CorrugationForm() {
           <RowGrid label="Smooth sigma (samples)" control={
             <input type="number" min="0" step="0.5" value={sigma} onChange={(e) => setSigma(Number(e.target.value))} className={inputBox} />
           } />
-          <RowGrid label="Neighbor frequency sweep" control={
-            <CheckboxToggle checked={neighborEval} onChange={setNeighborEval} label="Toggle" ariaLabel="Neighbor sweep" />
+          <RowGrid label="Min drop (inches)" control={
+            <input type="number" min="0" step="0.05" value={minDropIn} onChange={(e) => setMinDropIn(Number(e.target.value))} className={inputBox} />
           } />
-          {neighborEval && (
-            <RowGrid label="Neighbor range (±)" control={
-              <input type="number" min="1" step="1" value={neighborRange} onChange={(e) => setNeighborRange(Number(e.target.value))} className={inputBox} />
-            } />
-          )}
+          <RowGrid label="Min wavelength (m)" control={
+            <div className="flex items-center gap-1.5">
+              <input type="number" min="0" step="0.05" value={minWavelengthM}
+                onChange={(e) => { setMinWavelengthM(Number(e.target.value)); setWavelengthDirty(true); }}
+                className={inputBox} />
+              {wavelengthDirty && (
+                <button type="button" onClick={() => setWavelengthDirty(false)}
+                  className="text-[10px] text-blue-300 hover:text-blue-200" title="Re-compute from DEM resolution">
+                  auto
+                </button>
+              )}
+            </div>
+          } />
+          <RowGrid label="Max wavelength (m)" control={
+            <input type="number" min="0" step="0.1" value={maxWavelengthM}
+              onChange={(e) => { setMaxWavelengthM(Number(e.target.value)); setWavelengthDirty(true); }}
+              className={inputBox} />
+          } />
         </div>
 
         {isAnalyzing && results && (
@@ -256,14 +389,37 @@ export default function CorrugationForm() {
                 <div className="text-red-400">High:</div>
                 <div className="font-semibold text-red-400">{results.high_area_ft2.toFixed(1)} ft2 ({results.high_count} seg)</div>
               </div>
-              {results.html_report_url && (
-                <div className="mt-3">
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {results.html_report_url && (
                   <a href={results.html_report_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-[12px] font-medium hover:bg-blue-700 transition-colors shadow-lg">
+                    className="flex items-center justify-center gap-1.5 flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-[12px] font-medium hover:bg-blue-700 transition-colors shadow-lg">
                     <ExternalLink size={14} /> View Interactive Report
                   </a>
-                </div>
-              )}
+                )}
+                {results.features_geojson_url && (
+                  <button
+                    type="button"
+                    onClick={handleToggleOverlay}
+                    disabled={overlayLoading}
+                    className={`flex items-center justify-center gap-1.5 flex-1 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors shadow-lg ${
+                      overlayOn
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "bg-slate-700 text-slate-100 hover:bg-slate-600"
+                    } disabled:opacity-60 disabled:cursor-not-allowed`}
+                    aria-pressed={overlayOn}
+                    title={overlayOn ? "Hide detected segments on the map" : "Show detected segments on the map"}
+                  >
+                    {overlayLoading ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : overlayOn ? (
+                      <EyeOff size={14} />
+                    ) : (
+                      <Eye size={14} />
+                    )}
+                    {overlayOn ? "Hide Corrugation on Map" : "Show Corrugation on Map"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

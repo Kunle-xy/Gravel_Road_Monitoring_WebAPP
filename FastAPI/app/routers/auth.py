@@ -12,6 +12,7 @@ from app.auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_active_user, create_refresh_token,
     validate_refresh_token, revoke_user_refresh_tokens,
+    is_email_approved,
 )
 from app.config import settings
 from app.email import send_verification_email, create_verification_token
@@ -60,6 +61,11 @@ def _clear_auth_cookies(response: JSONResponse):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 @limiter.limit("20/hour")
 def register(request: Request, user_data: UserCreate, db: Session = Depends(get_db)):
+    if not is_email_approved(db, user_data.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This email is not authorized to register for this application. Please contact the administrator.",
+        )
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if not existing_user:
         hashed_password = get_password_hash(user_data.password)
@@ -85,6 +91,12 @@ def register(request: Request, user_data: UserCreate, db: Session = Depends(get_
 def login(request: Request, user_credentials: UserLogin, db: Session = Depends(get_db)):
     MAX_FAILED_ATTEMPTS = 5
     LOCKOUT_MINUTES = 15
+
+    if not is_email_approved(db, user_credentials.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is not authorized. Please contact the administrator.",
+        )
 
     user = db.query(User).filter(User.email == user_credentials.email).first()
 

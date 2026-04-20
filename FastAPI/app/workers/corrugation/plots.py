@@ -101,32 +101,3 @@ def create_summary_figure(results: Dict[str, Any]) -> str:
     return pio.to_html(fig, include_plotlyjs=False, full_html=False)
 
 
-def create_neighbor_summary_plot(neighbor_summary: List[Dict[str, Any]]) -> str:
-    """Create mean ± std total area plot across neighbor frequencies. Returns HTML div."""
-    sev_order = ["LOW", "MEDIUM", "HIGH"]
-    colors = ["#2e7d32", "#e65100", "#c62828"]
-
-    vals = {s: [] for s in sev_order}
-    for r in neighbor_summary:
-        s = r.get("severity")
-        a = r.get("total_area_ft2", 0)
-        if s in vals and np.isfinite(a):
-            vals[s].append(float(a))
-
-    means = [float(np.mean(vals[s])) if vals[s] else 0.0 for s in sev_order]
-    stds = [float(np.std(vals[s])) if len(vals[s]) > 1 else 0.0 for s in sev_order]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=sev_order, y=means,
-        error_y=dict(type="data", array=stds, visible=True),
-        marker_color=colors,
-        text=[f"{m:.1f} +/- {s:.1f}" for m, s in zip(means, stds)],
-        textposition="auto"
-    ))
-    fig.update_layout(
-        title="Total Area (Mean +/- Std) Across Frequencies",
-        yaxis_title="Area (ft2)", template="plotly_white",
-        height=350, margin=dict(t=50, b=40)
-    )
-    return pio.to_html(fig, include_plotlyjs=False, full_html=False)

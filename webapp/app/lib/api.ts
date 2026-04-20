@@ -141,6 +141,8 @@ export const API_ENDPOINTS = {
     BY_FILE: (tiffFileId: string) => `/corrugation/file/${tiffFileId}`,
     DELETE: (jobId: string) => `/corrugation/${jobId}`,
     COMPLETED: '/corrugation/completed',
+    AUTO_DEFAULTS: (tiffFileId: string, dyFreq: number) =>
+      `/corrugation/auto-defaults?tiff_file_id=${tiffFileId}&dy_freq=${dyFreq}`,
   },
   POTHOLE: {
     BASE: '/pothole',

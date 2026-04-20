@@ -8,8 +8,25 @@ from typing import Optional
 
 from app.config import settings
 from app.database import get_db
-from app.models import User, RefreshToken
+from app.models import User, RefreshToken, ApprovedEmail, ApprovedDomain
 from app.schemas import TokenData
+
+
+def is_email_approved(db: Session, email: str) -> bool:
+    """
+    True if `email` is in the allowlist — either matched exactly in
+    `approved_emails`, or whose domain is in `approved_domains`.
+    """
+    if not email:
+        return False
+    normalized = email.strip().lower()
+    if db.query(ApprovedEmail).filter(ApprovedEmail.email == normalized).first():
+        return True
+    if "@" in normalized:
+        domain = normalized.split("@", 1)[1]
+        if db.query(ApprovedDomain).filter(ApprovedDomain.domain == domain).first():
+            return True
+    return False
 
 # Use argon2 instead of bcrypt
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")

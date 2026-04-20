@@ -28,6 +28,24 @@ class User(Base):
     folders = relationship("Folder", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
 
+class ApprovedEmail(Base):
+    __tablename__ = "approved_emails"
+
+    email = Column(String(255), primary_key=True)
+    added_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    note = Column(Text)
+
+
+class ApprovedDomain(Base):
+    __tablename__ = "approved_domains"
+
+    domain = Column(String(255), primary_key=True)  # lowercase, no "@" prefix
+    added_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    note = Column(Text)
+
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
@@ -195,11 +213,12 @@ class CorrugationAnalysisJob(Base):
 
     # Analysis parameters
     polygon_geojson = Column(JSON, nullable=False)
-    line_interval = Column(Float, default=0.1)  # Meters between transect lines
-    dy_freq = Column(Integer, default=10)  # Sampling frequency per 100 pixels
-    sigma_samples = Column(Float, default=2.0)  # Gaussian smoothing sigma
-    neighbor_eval = Column(Boolean, default=False)
-    neighbor_range = Column(Integer, default=2)
+    line_interval = Column(Float, default=0.05)  # Meters between transect lines
+    dy_freq = Column(Integer, default=20)  # Sampling frequency per 100 pixels
+    sigma_samples = Column(Float, default=3.0)  # Gaussian smoothing sigma
+    min_drop_in = Column(Float, default=0.25)  # drops below this are rejected
+    min_wavelength_m = Column(Float, default=0.2)  # crest-to-crest floor
+    max_wavelength_m = Column(Float, default=2.0)  # crest-to-crest ceiling
 
     # Job status
     status = Column(String(50), default="pending")
@@ -211,6 +230,8 @@ class CorrugationAnalysisJob(Base):
     results_json = Column(JSON)
     html_report_s3_key = Column(String(500))
     html_report_url = Column(Text)
+    features_geojson_s3_key = Column(String(500))  # S3 key for segments GeoJSON overlay
+    features_geojson_url = Column(Text)  # Presigned URL for segments GeoJSON overlay
 
     # Statistics — area by severity
     low_area_ft2 = Column(Float, default=0.0)
