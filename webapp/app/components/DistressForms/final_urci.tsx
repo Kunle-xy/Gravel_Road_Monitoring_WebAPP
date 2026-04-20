@@ -1,137 +1,182 @@
 // app/components/DistressForms/final_urci.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { AlertCircle, RotateCcw } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, RotateCcw, Save, Trash2 } from "lucide-react";
+import { API_ENDPOINTS, fetchWithAuth } from "@/app/lib/api";
 
 /**
- * Simple URCI (Unsurfaced Road Condition Index) calculator.
+ * Final URCI — manual calculator + saved history.
  *
- * The user enters a deduct value (DV) per distress + severity. We apply a
- * light-weight Army-Corps-style iterative CDV approximation, then report
- * URCI = 100 − CDV along with a condition band.
- *
- * Note: this is an approximation. For the exact value, use the IowaDOT
- * CDV curves with density + severity as inputs. The calculator here is
- * meant to match what most field users expect from a quick spreadsheet.
+ * Flow:
+ *   1. User names the sample unit.
+ *   2. User enters one deduct value per distress (read off the IowaDOT
+ *      charts for the severity they observed).
+ *   3. Total deduct (ΣDV) and q (count of DVs > 2) auto-compute.
+ *   4. Reference CDV chart shows below; the user traces ΣDV × q to get CDV.
+ *   5. User enters final URCI (100 − CDV) they read off the chart.
+ *   6. Save persists sample_unit + DVs + q + total_dv + final_urci.
  */
 
-const DISTRESSES = ["Rut", "Crown", "Corrugation", "Dust", "Potholes"] as const;
+// IowaDOT's seven gravel-road distresses.
+const DISTRESSES = [
+  "Improper Cross Section",
+  "Inadequate Roadside Drainage",
+  "Potholes",
+  "Ruts",
+  "Loose Aggregate",
+  "Corrugations",
+  "Dust",
+] as const;
 type Distress = (typeof DISTRESSES)[number];
-const SEVERITIES = ["Low", "Medium", "High"] as const;
-type Severity = (typeof SEVERITIES)[number];
 
-type DeductTable = Record<Distress, Record<Severity, number>>;
+type DeductMap = Record<Distress, number>;
 
-const EMPTY_TABLE = (): DeductTable =>
-  Object.fromEntries(
-    DISTRESSES.map((d) => [d, { Low: 0, Medium: 0, High: 0 }])
-  ) as DeductTable;
+const EMPTY_DV = (): DeductMap =>
+  Object.fromEntries(DISTRESSES.map((d) => [d, 0])) as DeductMap;
 
-/**
- * Iterative CDV approximation.
- *   1. Collect DVs > 0, sort descending.
- *   2. In each round, compute a candidate CDV from the current list:
- *        q = count of DVs > 2
- *        cdv ≈ maxDV                        if q ≤ 1
- *        cdv ≈ maxDV + (total − maxDV) × k  otherwise, with k tapering off as q grows
- *   3. Reduce the smallest > 2 to 2 (or drop) and repeat.
- *   4. Final CDV = max candidate; URCI = max(0, 100 − CDV).
- */
-function computeUrci(values: DeductTable): {
-  urci: number;
-  cdv: number;
-  totalDV: number;
-  maxDV: number;
-  q: number;
-  band: string;
-  bandColor: string;
-} {
-  const flat: number[] = [];
-  for (const d of DISTRESSES) {
-    for (const s of SEVERITIES) {
-      const v = Number(values[d][s]) || 0;
-      if (v > 0) flat.push(v);
-    }
-  }
-
-  if (flat.length === 0) {
-    return { urci: 100, cdv: 0, totalDV: 0, maxDV: 0, q: 0, band: "Excellent", bandColor: "#16a34a" };
-  }
-
-  flat.sort((a, b) => b - a);
-  const totalDV = flat.reduce((a, b) => a + b, 0);
-  const maxDV = flat[0];
-  const q = flat.filter((v) => v > 2).length;
-
-  let maxCdv = 0;
-  const working = [...flat];
-
-  while (working.length > 0) {
-    const wSum = working.reduce((a, b) => a + b, 0);
-    const wMax = working[0];
-    const wQ = working.filter((v) => v > 2).length;
-
-    let candidate: number;
-    if (wQ <= 1) {
-      candidate = wMax;
-    } else {
-      // k starts at 0.85 for q=2 and decays with more minor distresses
-      const k = Math.max(0.25, 0.85 - 0.1 * (wQ - 2));
-      candidate = wMax + (wSum - wMax) * k;
-    }
-    if (candidate > maxCdv) maxCdv = candidate;
-
-    // Reduce the smallest DV that is still > 2 down to 2, else drop it
-    const lastIdx = working.length - 1;
-    if (working[lastIdx] > 2) working[lastIdx] = 2;
-    else working.pop();
-  }
-
-  const cdv = Math.min(100, maxCdv);
-  const urci = Math.max(0, Math.min(100, 100 - cdv));
-
-  const { band, bandColor } = conditionBand(urci);
-  return { urci, cdv, totalDV, maxDV, q, band, bandColor };
+interface URCIRecord {
+  id: string;
+  sample_unit: string;
+  deduct_values: Record<string, number>;
+  total_dv: number;
+  q_value: number;
+  final_urci: number;
+  created_at: string;
 }
 
-function conditionBand(urci: number): { band: string; bandColor: string } {
-  if (urci >= 85) return { band: "Excellent", bandColor: "#16a34a" };
-  if (urci >= 70) return { band: "Good", bandColor: "#65a30d" };
-  if (urci >= 55) return { band: "Fair", bandColor: "#eab308" };
-  if (urci >= 40) return { band: "Poor", bandColor: "#f97316" };
-  if (urci >= 25) return { band: "Very Poor", bandColor: "#dc2626" };
-  return { band: "Failed", bandColor: "#7f1d1d" };
+// Reference images under webapp/public/urci/. Missing files are hidden.
+const IMAGES: { file: string; caption: string }[] = [
+  { file: "/urci/cdv_curve.png",          caption: "Corrected deduct value (CDV) chart" },
+  { file: "/urci/deduct_rut.png",         caption: "Rut — deduct chart" },
+  { file: "/urci/deduct_crown.png",       caption: "Improper cross section — deduct chart" },
+  { file: "/urci/deduct_corrugation.png", caption: "Corrugations — deduct chart" },
+  { file: "/urci/deduct_dust.png",        caption: "Dust — deduct chart" },
+  { file: "/urci/deduct_pothole.png",     caption: "Potholes — deduct chart" },
+  { file: "/urci/severity_classes.png",   caption: "Severity classification key" },
+];
+
+function conditionBand(urci: number): { band: string; color: string } {
+  if (urci >= 85) return { band: "Excellent", color: "#16a34a" };
+  if (urci >= 70) return { band: "Good", color: "#65a30d" };
+  if (urci >= 55) return { band: "Fair", color: "#eab308" };
+  if (urci >= 40) return { band: "Poor", color: "#f97316" };
+  if (urci >= 25) return { band: "Very Poor", color: "#dc2626" };
+  return { band: "Failed", color: "#7f1d1d" };
 }
 
 export default function FinalURCIForm() {
-  const [values, setValues] = useState<DeductTable>(EMPTY_TABLE);
-  const [computed, setComputed] = useState<ReturnType<typeof computeUrci> | null>(null);
+  const [sampleUnit, setSampleUnit] = useState("");
+  const [dvs, setDvs] = useState<DeductMap>(EMPTY_DV);
+  const [finalUrciInput, setFinalUrciInput] = useState<string>("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [records, setRecords] = useState<URCIRecord[]>([]);
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  const [missing, setMissing] = useState<Set<string>>(new Set());
 
-  const hasAnyInput = useMemo(
-    () =>
-      DISTRESSES.some((d) =>
-        SEVERITIES.some((s) => Number(values[d][s]) > 0)
-      ),
-    [values]
-  );
+  // Derived: total deduct (ΣDV) and q (count of DVs > 2).
+  const { totalDV, qValue } = useMemo(() => {
+    let total = 0;
+    let q = 0;
+    for (const d of DISTRESSES) {
+      const v = Number(dvs[d]) || 0;
+      if (v > 0) total += v;
+      if (v > 2) q += 1;
+    }
+    return { totalDV: total, qValue: q };
+  }, [dvs]);
 
-  const setDv = (d: Distress, s: Severity, raw: string) => {
+  const finalUrciNum = useMemo(() => {
+    const n = parseFloat(finalUrciInput);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(100, n));
+  }, [finalUrciInput]);
+
+  const loadRecords = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.URCI.LIST);
+      if (res.ok) setRecords(await res.json());
+    } catch (e) {
+      console.error("Failed to list URCI records:", e);
+    } finally {
+      setLoadingRecords(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRecords();
+  }, [loadRecords]);
+
+  const handleSetDv = (d: Distress, raw: string) => {
     const n = Math.max(0, Math.min(100, Number(raw) || 0));
-    setValues((prev) => ({ ...prev, [d]: { ...prev[d], [s]: n } }));
-  };
-
-  const handleCompute = () => {
-    setComputed(computeUrci(values));
+    setDvs((prev) => ({ ...prev, [d]: n }));
   };
 
   const handleReset = () => {
-    setValues(EMPTY_TABLE());
-    setComputed(null);
+    setSampleUnit("");
+    setDvs(EMPTY_DV());
+    setFinalUrciInput("");
+    setNotes("");
+    setFlash(null);
   };
 
+  const handleSave = async () => {
+    if (!sampleUnit.trim()) {
+      setFlash({ kind: "err", text: "Sample unit name is required." });
+      return;
+    }
+    if (finalUrciNum === null) {
+      setFlash({ kind: "err", text: "Enter the final URCI value from the chart." });
+      return;
+    }
+    setSaving(true);
+    setFlash(null);
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.URCI.CREATE, {
+        method: "POST",
+        body: JSON.stringify({
+          sample_unit: sampleUnit.trim(),
+          deduct_values: dvs,
+          total_dv: totalDV,
+          q_value: qValue,
+          final_urci: finalUrciNum,
+          notes: notes.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Save failed (${res.status})`);
+      }
+      const saved: URCIRecord = await res.json();
+      setRecords((prev) => [saved, ...prev]);
+      setFlash({ kind: "ok", text: `Saved "${saved.sample_unit}" — URCI ${saved.final_urci.toFixed(1)}` });
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Save failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRecord = async (id: string, name: string) => {
+    if (!confirm(`Delete URCI record "${name}"?`)) return;
+    try {
+      const res = await fetchWithAuth(API_ENDPOINTS.URCI.DELETE(id), { method: "DELETE" });
+      if (!res.ok && res.status !== 204) {
+        throw new Error(`Delete failed (${res.status})`);
+      }
+      setRecords((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Delete failed" });
+    }
+  };
+
+  const band = finalUrciNum !== null ? conditionBand(finalUrciNum) : null;
+
   const inputBox =
-    "w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-right text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
+    "w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
+  const numBox = `${inputBox} text-right`;
 
   return (
     <div className="w-full bg-linear-to-b from-slate-800 to-slate-900 rounded-lg shadow-lg p-3 text-[13px] text-slate-100 leading-tight ring-1 ring-slate-700/50">
@@ -139,117 +184,212 @@ export default function FinalURCIForm() {
         Final URCI
       </h2>
 
-      <p className="text-[11px] text-slate-400 mb-2">
-        Enter the deduct value (0–100) for each distress severity. URCI is
-        estimated from the total/combined deduct.
-      </p>
+      {/* Sample unit + deduct inputs */}
+      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+        Sample unit name
+      </label>
+      <input
+        type="text"
+        value={sampleUnit}
+        onChange={(e) => setSampleUnit(e.target.value)}
+        placeholder="e.g. 150th St — Section A"
+        className={inputBox}
+      />
 
-      <table className="w-full text-[12px] border-collapse">
-        <thead>
-          <tr className="text-slate-300">
-            <th className="text-left font-semibold py-1 pr-2">Distress</th>
-            {SEVERITIES.map((s) => (
-              <th key={s} className="text-right font-semibold py-1 px-1">
-                {s}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {DISTRESSES.map((d) => (
-            <tr key={d} className="border-t border-slate-700/60">
-              <td className="py-1 pr-2 font-medium text-slate-200">{d}</td>
-              {SEVERITIES.map((s) => (
-                <td key={s} className="py-1 px-1">
+      <div className="mt-3">
+        <div className="text-[11px] font-semibold text-slate-300 mb-1">
+          Deduct values (from manual)
+        </div>
+        <table className="w-full text-[12px] border-collapse">
+          <tbody>
+            {DISTRESSES.map((d) => (
+              <tr key={d} className="border-t border-slate-700/60">
+                <td className="py-1 pr-2 text-slate-200">{d}</td>
+                <td className="py-1 pl-1" style={{ width: "5.5rem" }}>
                   <input
                     type="number"
                     min={0}
                     max={100}
                     step={1}
-                    value={values[d][s] || ""}
-                    onChange={(e) => setDv(d, s, e.target.value)}
-                    className={inputBox}
-                    aria-label={`${d} ${s} deduct value`}
+                    value={dvs[d] || ""}
+                    onChange={(e) => handleSetDv(d, e.target.value)}
+                    className={numBox}
+                    aria-label={`${d} deduct value`}
                   />
                 </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="flex gap-2 mt-3">
-        <button
-          onClick={handleCompute}
-          disabled={!hasAnyInput}
-          className="flex-1 py-2 px-3 bg-blue-600 text-white rounded-lg text-[12px] font-semibold hover:bg-blue-700 transition-colors shadow-lg disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-        >
-          Calculate URCI
-        </button>
-        <button
-          onClick={handleReset}
-          className="flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg text-[12px] font-medium transition-colors"
-          title="Clear all values"
-        >
-          <RotateCcw size={13} /> Reset
-        </button>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {computed && (
+      {/* Auto ΣDV + q */}
+      <div className="grid grid-cols-2 gap-2 mt-3 text-[12px]">
+        <div className="bg-slate-800 border border-slate-700 rounded p-2">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">Total deduct (ΣDV)</div>
+          <div className="text-[18px] font-bold text-slate-100 mt-0.5">{totalDV.toFixed(1)}</div>
+        </div>
+        <div className="bg-slate-800 border border-slate-700 rounded p-2">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">q (DVs &gt; 2)</div>
+          <div className="text-[18px] font-bold text-slate-100 mt-0.5">{qValue}</div>
+        </div>
+      </div>
+
+      {/* Reference charts */}
+      {IMAGES.some((img) => !missing.has(img.file)) && (
         <div className="border-t border-slate-700 mt-3 pt-3">
-          <div
-            className="rounded-lg p-3 text-center"
-            style={{
-              backgroundColor: `${computed.bandColor}22`,
-              border: `1px solid ${computed.bandColor}66`,
-            }}
-          >
-            <div className="text-[11px] uppercase tracking-wide text-slate-400">
-              Final URCI
-            </div>
-            <div
-              className="text-[36px] font-extrabold leading-none mt-1"
-              style={{ color: computed.bandColor }}
-            >
-              {computed.urci.toFixed(1)}
-            </div>
-            <div
-              className="text-[12px] font-semibold mt-1"
-              style={{ color: computed.bandColor }}
-            >
-              {computed.band}
-            </div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-2">
+            Reference charts — trace ΣDV × q → CDV
           </div>
-
-          <div className="grid grid-cols-2 gap-2 mt-3 text-[11px]">
-            <div className="text-slate-400">Total deduct (ΣDV):</div>
-            <div className="text-right font-semibold text-slate-100">
-              {computed.totalDV.toFixed(1)}
-            </div>
-            <div className="text-slate-400">Max single DV:</div>
-            <div className="text-right font-semibold text-slate-100">
-              {computed.maxDV.toFixed(1)}
-            </div>
-            <div className="text-slate-400">Distresses &gt; 2 (q):</div>
-            <div className="text-right font-semibold text-slate-100">
-              {computed.q}
-            </div>
-            <div className="text-slate-400">Corrected Deduct (CDV):</div>
-            <div className="text-right font-semibold text-slate-100">
-              {computed.cdv.toFixed(1)}
-            </div>
-          </div>
-
-          <div className="flex items-start gap-2 mt-3 text-[10.5px] text-slate-400">
-            <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
-            <span>
-              Approximation using an iterative CDV rule. For an exact URCI,
-              cross-reference the IowaDOT CDV curves with density and
-              severity per distress.
-            </span>
+          <div className="grid grid-cols-2 gap-2">
+            {IMAGES.map(({ file, caption }) =>
+              missing.has(file) ? null : (
+                <figure key={file} className="m-0 min-w-0">
+                  <img
+                    src={file}
+                    alt={caption}
+                    className="w-full h-auto max-h-40 object-contain rounded border border-slate-700 bg-slate-900"
+                    onError={() =>
+                      setMissing((prev) => {
+                        if (prev.has(file)) return prev;
+                        const next = new Set(prev);
+                        next.add(file);
+                        return next;
+                      })
+                    }
+                  />
+                  <figcaption className="text-[10px] text-slate-400 text-center mt-1">
+                    {caption}
+                  </figcaption>
+                </figure>
+              )
+            )}
           </div>
         </div>
       )}
+
+      {/* Final URCI input + save */}
+      <div className="border-t border-slate-700 mt-3 pt-3">
+        <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+          Final URCI value (read from chart)
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.1}
+            value={finalUrciInput}
+            onChange={(e) => setFinalUrciInput(e.target.value)}
+            placeholder="0 – 100"
+            className={`${numBox} flex-1`}
+          />
+          {band && (
+            <div
+              className="px-2 py-1 rounded text-[12px] font-bold"
+              style={{ backgroundColor: `${band.color}22`, color: band.color, border: `1px solid ${band.color}66` }}
+            >
+              {band.band}
+            </div>
+          )}
+        </div>
+
+        <label className="block text-[11px] font-semibold text-slate-300 mt-3 mb-1">
+          Notes (optional)
+        </label>
+        <input
+          type="text"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="weather, surveyor, etc."
+          className={inputBox}
+        />
+
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-semibold transition-colors shadow-lg disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
+          >
+            <Save size={13} /> {saving ? "Saving..." : "Save URCI"}
+          </button>
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg text-[12px] font-medium transition-colors"
+            title="Clear all fields"
+          >
+            <RotateCcw size={13} /> Reset
+          </button>
+        </div>
+
+        {flash && (
+          <div
+            className={`flex items-start gap-2 mt-2 p-2 rounded-lg text-[11px] ${
+              flash.kind === "ok"
+                ? "bg-emerald-900/30 border border-emerald-700/60 text-emerald-200"
+                : "bg-red-900/30 border border-red-700/60 text-red-200"
+            }`}
+          >
+            <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+            <span>{flash.text}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Saved history */}
+      <div className="border-t border-slate-700 mt-3 pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] uppercase tracking-wide text-slate-400">
+            Saved URCI records
+          </div>
+          <div className="text-[10px] text-slate-500">{records.length}</div>
+        </div>
+        {loadingRecords ? (
+          <div className="text-[11px] text-slate-400">Loading…</div>
+        ) : records.length === 0 ? (
+          <div className="text-[11px] text-slate-500 italic">No records yet.</div>
+        ) : (
+          <ul className="space-y-1 max-h-40 overflow-y-auto pr-1">
+            {records.map((r) => {
+              const rBand = conditionBand(r.final_urci);
+              return (
+                <li
+                  key={r.id}
+                  className="flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded px-2 py-1.5"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-slate-100 truncate">
+                      {r.sample_unit}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      ΣDV {r.total_dv.toFixed(1)} · q {r.q_value} ·{" "}
+                      {new Date(r.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div
+                    className="px-2 py-0.5 rounded text-[11px] font-bold"
+                    style={{
+                      backgroundColor: `${rBand.color}22`,
+                      color: rBand.color,
+                      border: `1px solid ${rBand.color}66`,
+                    }}
+                  >
+                    {r.final_urci.toFixed(1)}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteRecord(r.id, r.sample_unit)}
+                    className="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
+                    title="Delete record"
+                    aria-label={`Delete ${r.sample_unit}`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

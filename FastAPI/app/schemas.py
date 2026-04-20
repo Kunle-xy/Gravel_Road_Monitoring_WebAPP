@@ -479,3 +479,28 @@ class DustAnalysisStatusResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── URCI Records ───────────────────────────────────────────────────────
+class URCIRecordCreate(BaseModel):
+    sample_unit: str
+    deduct_values: Dict[str, float]
+    total_dv: float
+    q_value: int
+    final_urci: float
+    notes: Optional[str] = None
+
+
+class URCIRecordResponse(BaseModel):
+    id: uuid_lib.UUID
+    user_id: uuid_lib.UUID
+    sample_unit: str
+    deduct_values: Dict[str, float]
+    total_dv: float
+    q_value: int
+    final_urci: float
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

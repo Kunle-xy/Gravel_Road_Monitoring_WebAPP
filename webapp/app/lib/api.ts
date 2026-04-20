@@ -166,4 +166,10 @@ export const API_ENDPOINTS = {
     DELETE: (jobId: string) => `/dust/${jobId}`,
     COMPLETED: '/dust/completed',
   },
+  URCI: {
+    BASE: '/urci',
+    LIST: '/urci',
+    CREATE: '/urci',
+    DELETE: (id: string) => `/urci/${id}`,
+  },
 } as const;

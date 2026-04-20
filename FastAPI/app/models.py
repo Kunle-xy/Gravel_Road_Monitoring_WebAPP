@@ -336,3 +336,24 @@ class DustAnalysisJob(Base):
     completed_at = Column(DateTime(timezone=True))
 
     video_file = relationship("VideoFile", back_populates="dust_analyses")
+
+
+class URCIRecord(Base):
+    """
+    Saved Final URCI calculation — one row per saved sample unit. The
+    distress deduct values are stored as JSON so this schema doesn't need
+    to change if the distress list grows later.
+    """
+    __tablename__ = "urci_records"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    sample_unit = Column(String(255), nullable=False)
+    deduct_values = Column(JSON, nullable=False)  # {"Rut": 25, "Crown": 10, ...}
+    total_dv = Column(Float, default=0.0)
+    q_value = Column(Integer, default=0)
+    final_urci = Column(Float, nullable=False)
+    notes = Column(Text)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -6,7 +6,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, files, upload, tiles_status, folders, rut_analysis, crown_analysis, corrugation_analysis, dust_analysis, pothole_analysis
+from app.routers import auth, files, upload, tiles_status, folders, rut_analysis, crown_analysis, corrugation_analysis, dust_analysis, pothole_analysis, urci
 import logging
 
 # Configure logging
@@ -62,6 +62,7 @@ app.include_router(crown_analysis.router)  # Crown distress analysis
 app.include_router(corrugation_analysis.router)  # Corrugation distress analysis
 app.include_router(dust_analysis.router)  # Dust distress analysis (video + YOLOv8)
 app.include_router(pothole_analysis.router)  # Pothole analysis (3D surface + depth/width)
+app.include_router(urci.router)  # URCI — saved manual calculations
 
 
 @app.on_event("startup")
