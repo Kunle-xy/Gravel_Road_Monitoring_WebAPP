@@ -105,13 +105,17 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
         const TRANSPARENT_PNG =
           "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
+        // Long narrow DEMs fade to invisible at world-scale zooms because
+        // the road is sub-pixel. Hide the layer below z=15 and render the
+        // content pixels at full opacity so what's there actually shows.
+        const VISIBLE_MIN_ZOOM = 15;
         const layer = new L.TileLayer(tileUrl, {
-          opacity: 0.8,
+          opacity: 1.0,
           bounds: tileBounds,
           maxZoom: 26,
           maxNativeZoom: maxNative,
           minNativeZoom: minZoomAllowed,
-          minZoom: Math.min(12, minZoomAllowed),
+          minZoom: VISIBLE_MIN_ZOOM,
           attribution: file.filename,
           crossOrigin: 'anonymous',
           tileSize: 256,
