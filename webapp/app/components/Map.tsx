@@ -530,6 +530,13 @@ function RotationHandle({
     };
     map.on('zoomend moveend', onZoomOrMove);
 
+    // Edge-resize fires this on the polygon — keep the rotate handle
+    // anchored to the polygon center as the rectangle stretches.
+    const onPolygonReshape = () => {
+      if (!moveHandler) handle.setLatLng(computeHandleLatLng());
+    };
+    polygon.on('reshape', onPolygonReshape);
+
     const onDocKey = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') onDismiss();
     };
@@ -541,10 +548,254 @@ function RotationHandle({
       if (upHandler) document.removeEventListener('mouseup', upHandler);
       map.removeLayer(handle);
       map.off('zoomend moveend', onZoomOrMove);
+      polygon.off('reshape', onPolygonReshape);
       document.removeEventListener('keydown', onDocKey);
       document.body.style.cursor = '';
     };
   }, [map, polygon, onCommit, onDismiss]);
+
+  return null;
+}
+
+/**
+ * Select-first edge resize. Each of the rectangle's four edges is a wide,
+ * transparent polyline "hit zone" that picks up clicks on the edge line.
+ * Clicking an edge selects it — we draw a visible blue highlight on top
+ * and a draggable grip at its midpoint. Dragging the grip moves both
+ * corners of that edge along its outward normal (only that side stretches,
+ * rotation is preserved). Clicking another edge switches selection;
+ * Escape clears it.
+ */
+function EdgeResizeHandles({
+  map,
+  polygon,
+  onCommit,
+}: {
+  map: L.Map;
+  polygon: DrawnLayer;
+  onCommit: (corners: L.LatLng[]) => void;
+}) {
+  const [selectedEdge, setSelectedEdge] = React.useState<number | null>(null);
+
+  // Reset selection whenever the polygon changes.
+  React.useEffect(() => {
+    setSelectedEdge(null);
+  }, [polygon]);
+
+  const cornersLL = React.useCallback(
+    (): L.LatLng[] => (polygon.getLatLngs()[0] as unknown) as L.LatLng[],
+    [polygon],
+  );
+
+  // Transparent wide polyline per edge — the click target.
+  React.useEffect(() => {
+    const hitZones: L.Polyline[] = [];
+
+    const buildZones = () => {
+      const corners = cornersLL();
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % 4];
+        const zone = L.polyline([a, b], {
+          color: '#2563eb',
+          opacity: 0,
+          weight: 18,
+          interactive: true,
+          bubblingMouseEvents: false,
+        }).addTo(map);
+        const el = (zone as unknown as { getElement?: () => SVGElement | null })
+          .getElement?.();
+        if (el) {
+          (el as SVGElement & { style: CSSStyleDeclaration }).style.cursor = 'pointer';
+        }
+        zone.on('click', (evt: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(evt.originalEvent);
+          setSelectedEdge(i);
+        });
+        hitZones.push(zone);
+      }
+    };
+
+    const refreshZones = () => {
+      const corners = cornersLL();
+      hitZones.forEach((z, i) => {
+        z.setLatLngs([corners[i], corners[(i + 1) % 4]]);
+      });
+    };
+
+    buildZones();
+    polygon.on('reshape', refreshZones);
+
+    return () => {
+      polygon.off('reshape', refreshZones);
+      hitZones.forEach((z) => map.removeLayer(z));
+    };
+  }, [map, polygon, cornersLL]);
+
+  // Highlight + draggable grip for the currently selected edge.
+  React.useEffect(() => {
+    if (selectedEdge === null) return;
+
+    const edgeIndex = selectedEdge;
+    const cornersPx = (): L.Point[] =>
+      cornersLL().map((ll) => map.latLngToLayerPoint(ll));
+
+    const midLatLng = (a: L.Point, b: L.Point): L.LatLng =>
+      map.layerPointToLatLng(L.point((a.x + b.x) / 2, (a.y + b.y) / 2));
+
+    const cursorForEdge = (a: L.Point, b: L.Point): string => {
+      const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      const d = ((angle % 180) + 180) % 180;
+      if (d < 22.5 || d >= 157.5) return 'ns-resize';
+      if (d < 67.5) return 'nesw-resize';
+      if (d < 112.5) return 'ew-resize';
+      return 'nwse-resize';
+    };
+
+    const corners = cornersLL();
+    const highlight = L.polyline(
+      [corners[edgeIndex], corners[(edgeIndex + 1) % 4]],
+      { color: '#2563eb', weight: 4, opacity: 0.95, interactive: false },
+    ).addTo(map);
+
+    const ptsAtStart = cornersPx();
+    const grip = L.marker(
+      midLatLng(ptsAtStart[edgeIndex], ptsAtStart[(edgeIndex + 1) % 4]),
+      {
+        icon: L.divIcon({
+          className: 'edge-resize-grip',
+          html: `<div style="
+            width: 14px; height: 14px;
+            background: #2563eb; border: 2px solid white;
+            border-radius: 3px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+          "></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        }),
+        interactive: true,
+        bubblingMouseEvents: false,
+        keyboard: false,
+        zIndexOffset: 1100,
+      },
+    ).addTo(map);
+
+    const gripEl = grip.getElement() as HTMLElement | null;
+    let moveHandler: ((ev: MouseEvent) => void) | null = null;
+    let upHandler: (() => void) | null = null;
+
+    const repositionOverlay = () => {
+      const llCurrent = cornersLL();
+      highlight.setLatLngs([llCurrent[edgeIndex], llCurrent[(edgeIndex + 1) % 4]]);
+      const pts = cornersPx();
+      grip.setLatLng(midLatLng(pts[edgeIndex], pts[(edgeIndex + 1) % 4]));
+      if (gripEl) gripEl.style.cursor = cursorForEdge(pts[edgeIndex], pts[(edgeIndex + 1) % 4]);
+    };
+
+    if (gripEl) {
+      gripEl.style.pointerEvents = 'auto';
+      gripEl.style.cursor = cursorForEdge(
+        ptsAtStart[edgeIndex],
+        ptsAtStart[(edgeIndex + 1) % 4],
+      );
+      L.DomEvent.disableClickPropagation(gripEl);
+      L.DomEvent.disableScrollPropagation(gripEl);
+
+      const pointerDown = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        map.dragging.disable();
+        map.boxZoom.disable();
+        document.body.style.cursor = gripEl.style.cursor;
+
+        const startPt = map.mouseEventToLayerPoint(e);
+        const snapshotLL = cornersLL().map((ll) => L.latLng(ll.lat, ll.lng));
+        const snapshotPts = snapshotLL.map((ll) => map.latLngToLayerPoint(ll));
+        const labelSnapshot = polygon.label?.getLatLng();
+
+        const i0 = edgeIndex;
+        const i1 = (edgeIndex + 1) % 4;
+        const ex = snapshotPts[i1].x - snapshotPts[i0].x;
+        const ey = snapshotPts[i1].y - snapshotPts[i0].y;
+        const len = Math.hypot(ex, ey) || 1;
+        const nx = -ey / len;
+        const ny = ex / len;
+
+        moveHandler = (ev: MouseEvent) => {
+          ev.preventDefault();
+          const p = map.mouseEventToLayerPoint(ev);
+          const proj = (p.x - startPt.x) * nx + (p.y - startPt.y) * ny;
+          const tx = proj * nx;
+          const ty = proj * ny;
+
+          const newPts = snapshotPts.map((pt, idx) =>
+            idx === i0 || idx === i1 ? L.point(pt.x + tx, pt.y + ty) : pt,
+          );
+          const newCorners = newPts.map((pt) => map.layerPointToLatLng(pt));
+          polygon.setLatLngs([newCorners]);
+
+          if (labelSnapshot && polygon.label) {
+            const labelPt = map.latLngToLayerPoint(labelSnapshot);
+            polygon.label.setLatLng(
+              map.layerPointToLatLng(L.point(labelPt.x + tx / 2, labelPt.y + ty / 2)),
+            );
+          }
+
+          highlight.setLatLngs([newCorners[i0], newCorners[i1]]);
+          grip.setLatLng(midLatLng(newPts[i0], newPts[i1]));
+          polygon.fire('reshape');
+        };
+
+        upHandler = () => {
+          if (moveHandler) document.removeEventListener('mousemove', moveHandler);
+          if (upHandler) document.removeEventListener('mouseup', upHandler);
+          document.body.style.cursor = '';
+          map.dragging.enable();
+          map.boxZoom.enable();
+          onCommit(cornersLL());
+          moveHandler = null;
+          upHandler = null;
+        };
+
+        document.addEventListener('mousemove', moveHandler);
+        document.addEventListener('mouseup', upHandler);
+      };
+
+      gripEl.addEventListener('mousedown', pointerDown);
+
+      const onZoomOrMove = () => {
+        if (!moveHandler) repositionOverlay();
+      };
+      map.on('zoomend moveend', onZoomOrMove);
+
+      const onReshape = () => {
+        if (!moveHandler) repositionOverlay();
+      };
+      polygon.on('reshape', onReshape);
+
+      const onKey = (ev: KeyboardEvent) => {
+        if (ev.key === 'Escape') setSelectedEdge(null);
+      };
+      document.addEventListener('keydown', onKey);
+
+      return () => {
+        gripEl.removeEventListener('mousedown', pointerDown);
+        if (moveHandler) document.removeEventListener('mousemove', moveHandler);
+        if (upHandler) document.removeEventListener('mouseup', upHandler);
+        map.off('zoomend moveend', onZoomOrMove);
+        polygon.off('reshape', onReshape);
+        document.removeEventListener('keydown', onKey);
+        map.removeLayer(highlight);
+        map.removeLayer(grip);
+        document.body.style.cursor = '';
+      };
+    }
+
+    return () => {
+      map.removeLayer(highlight);
+      map.removeLayer(grip);
+    };
+  }, [map, polygon, onCommit, selectedEdge, cornersLL]);
 
   return null;
 }
@@ -722,12 +973,19 @@ export default function Map() {
         <ClearPolygonsControl onClear={handleClearPolygons} />
         <PolygonDrawing mode={mode} onPolygonComplete={handlePolygonComplete} />
         {mapInstance && selectedPolygon && (
-          <RotationHandle
-            map={mapInstance}
-            polygon={selectedPolygon}
-            onCommit={handleRotationCommit}
-            onDismiss={handleRotationDismiss}
-          />
+          <>
+            <EdgeResizeHandles
+              map={mapInstance}
+              polygon={selectedPolygon}
+              onCommit={handleRotationCommit}
+            />
+            <RotationHandle
+              map={mapInstance}
+              polygon={selectedPolygon}
+              onCommit={handleRotationCommit}
+              onDismiss={handleRotationDismiss}
+            />
+          </>
         )}
       </MapContainer>
     </div>
