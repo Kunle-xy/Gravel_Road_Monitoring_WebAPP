@@ -10,6 +10,7 @@ import os
 import tempfile
 import logging
 from datetime import datetime
+from typing import Optional
 
 import boto3
 
@@ -132,11 +133,16 @@ def analyze_ruts_task(self, job_id: str):
         # upload it to S3. The frontend toggles this as a Leaflet layer.
         geojson_s3_key = None
         geojson_url = None
+        overlay_error: Optional[str] = None
         try:
             features = []
+            ruts_total = 0
+            ruts_missing_ring = 0
             for rut in results.get('ruts') or []:
+                ruts_total += 1
                 ring = rut.get('rect_coords')
                 if not ring or len(ring) < 4:
+                    ruts_missing_ring += 1
                     continue
                 features.append({
                     'type': 'Feature',
@@ -152,6 +158,12 @@ def analyze_ruts_task(self, job_id: str):
                         'frequency': rut.get('frequency'),
                     },
                 })
+            if ruts_total > 0 and not features:
+                overlay_error = (
+                    f"None of the {ruts_total} detected ruts had geographic "
+                    f"coordinates — the source DEM's CRS could not be transformed "
+                    f"to WGS84. Re-upload with a standard CRS (e.g. EPSG:26915)."
+                )
             feature_collection = {'type': 'FeatureCollection', 'features': features}
 
             geojson_s3_key = f"rut_analysis/{job.user_id}/{job_id}/features.geojson"
@@ -166,11 +178,16 @@ def analyze_ruts_task(self, job_id: str):
                     Params={'Bucket': settings.S3_BUCKET_RAW, 'Key': geojson_s3_key},
                     ExpiresIn=604800,
                 )
-                logger.info(f"Job {job_id}: Features GeoJSON uploaded ({len(features)} features)")
+                logger.info(
+                    f"Job {job_id}: Features GeoJSON uploaded "
+                    f"({len(features)} features, {ruts_missing_ring} skipped)",
+                )
             finally:
                 os.unlink(tmp_gj_path)
         except Exception as gj_err:
             logger.error(f"Job {job_id}: Features GeoJSON upload failed, continuing: {gj_err}")
+            overlay_error = f"{type(gj_err).__name__}: {gj_err}"
+            geojson_url = None
 
         # Step 5: Update job with results
         job.results_json = results
@@ -178,6 +195,7 @@ def analyze_ruts_task(self, job_id: str):
         job.html_plot_url = html_url
         job.features_geojson_s3_key = geojson_s3_key
         job.features_geojson_url = geojson_url
+        job.overlay_error = overlay_error
         job.total_ruts_detected = results['total_ruts_detected']
         job.low_severity_count = results['low_severity_count']
         job.medium_severity_count = results['medium_severity_count']

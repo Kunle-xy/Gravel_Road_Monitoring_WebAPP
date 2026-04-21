@@ -193,6 +193,7 @@ class RutAnalysisStatusResponse(BaseModel):
     error_message: Optional[str] = None
     html_plot_url: Optional[str] = None
     features_geojson_url: Optional[str] = None
+    overlay_error: Optional[str] = None
     total_ruts_detected: int
     low_severity_count: int
     medium_severity_count: int
@@ -318,6 +319,7 @@ class CrownAnalysisStatusResponse(BaseModel):
     error_message: Optional[str] = None
     html_report_url: Optional[str] = None
     features_geojson_url: Optional[str] = None
+    overlay_error: Optional[str] = None
     low_severity_ft: float
     medium_severity_ft: float
     high_severity_ft: float
@@ -381,6 +383,7 @@ class CorrugationAnalysisStatusResponse(BaseModel):
     error_message: Optional[str] = None
     html_report_url: Optional[str] = None
     features_geojson_url: Optional[str] = None
+    overlay_error: Optional[str] = None
     low_area_ft2: float
     medium_area_ft2: float
     high_area_ft2: float

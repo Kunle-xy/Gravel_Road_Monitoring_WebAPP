@@ -129,6 +129,7 @@ async def get_crown_analysis_status(
         error_message=job.error_message,
         html_report_url=job.html_report_url,
         features_geojson_url=job.features_geojson_url,
+        overlay_error=job.overlay_error,
         low_severity_ft=job.low_severity_ft,
         medium_severity_ft=job.medium_severity_ft,
         high_severity_ft=job.high_severity_ft,

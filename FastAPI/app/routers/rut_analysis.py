@@ -169,6 +169,7 @@ async def get_rut_analysis_status(
         error_message=job.error_message,
         html_plot_url=job.html_plot_url,
         features_geojson_url=job.features_geojson_url,
+        overlay_error=job.overlay_error,
         total_ruts_detected=job.total_ruts_detected,
         low_severity_count=job.low_severity_count,
         medium_severity_count=job.medium_severity_count,

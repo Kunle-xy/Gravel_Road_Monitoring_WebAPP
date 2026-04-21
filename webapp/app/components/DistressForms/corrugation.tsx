@@ -62,7 +62,8 @@ interface AnalysisResults {
   id: string; status: string; progress: number;
   low_area_ft2: number; medium_area_ft2: number; high_area_ft2: number;
   total_area_ft2: number; low_count: number; medium_count: number; high_count: number;
-  html_report_url?: string; features_geojson_url?: string; error_message?: string;
+  html_report_url?: string; features_geojson_url?: string;
+  overlay_error?: string | null; error_message?: string;
 }
 
 export default function CorrugationForm() {
@@ -420,6 +421,12 @@ export default function CorrugationForm() {
                   </button>
                 )}
               </div>
+              {!results.features_geojson_url && results.overlay_error && (
+                <div className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-300 bg-amber-900/20 border border-amber-700/40 rounded px-2 py-1.5">
+                  <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                  <span><strong>Map overlay unavailable.</strong> {results.overlay_error}</span>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -146,6 +146,7 @@ class RutAnalysisJob(Base):
     html_plot_url = Column(Text)  # CloudFront URL for HTML plot
     features_geojson_s3_key = Column(String(500))  # S3 key for ruts GeoJSON overlay
     features_geojson_url = Column(Text)  # Presigned URL for ruts GeoJSON overlay
+    overlay_error = Column(Text)  # Why overlay generation failed (NULL on success)
 
     # Statistics
     total_ruts_detected = Column(Integer, default=0)
@@ -189,6 +190,7 @@ class CrownAnalysisJob(Base):
     html_report_url = Column(Text)
     features_geojson_s3_key = Column(String(500))  # S3 key for crown strips GeoJSON overlay
     features_geojson_url = Column(Text)  # Presigned URL for crown strips GeoJSON overlay
+    overlay_error = Column(Text)  # Why overlay generation failed (NULL on success)
 
     # Statistics — linear feet by severity
     low_severity_ft = Column(Float, default=0.0)
@@ -234,6 +236,7 @@ class CorrugationAnalysisJob(Base):
     html_report_url = Column(Text)
     features_geojson_s3_key = Column(String(500))  # S3 key for segments GeoJSON overlay
     features_geojson_url = Column(Text)  # Presigned URL for segments GeoJSON overlay
+    overlay_error = Column(Text)  # Why overlay generation failed (NULL on success)
 
     # Statistics — area by severity
     low_area_ft2 = Column(Float, default=0.0)

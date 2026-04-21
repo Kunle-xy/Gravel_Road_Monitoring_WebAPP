@@ -104,6 +104,7 @@ interface AnalysisResults {
   total_area_sqft: number;
   html_plot_url?: string;
   features_geojson_url?: string;
+  overlay_error?: string | null;
   error_message?: string;
 }
 
@@ -673,6 +674,12 @@ export default function RutForm() {
                   </button>
                 )}
               </div>
+              {!results.features_geojson_url && results.overlay_error && (
+                <div className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-300 bg-amber-900/20 border border-amber-700/40 rounded px-2 py-1.5">
+                  <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                  <span><strong>Map overlay unavailable.</strong> {results.overlay_error}</span>
+                </div>
+              )}
             </div>
           </div>
         )}

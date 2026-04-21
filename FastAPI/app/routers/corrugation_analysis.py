@@ -143,6 +143,7 @@ async def get_status(job_id: uuid.UUID, current_user: User = Depends(get_current
         id=job.id, status=job.status, progress=job.progress,
         error_message=job.error_message, html_report_url=job.html_report_url,
         features_geojson_url=job.features_geojson_url,
+        overlay_error=job.overlay_error,
         low_area_ft2=job.low_area_ft2, medium_area_ft2=job.medium_area_ft2,
         high_area_ft2=job.high_area_ft2, total_area_ft2=job.total_area_ft2,
         low_count=job.low_count, medium_count=job.medium_count, high_count=job.high_count

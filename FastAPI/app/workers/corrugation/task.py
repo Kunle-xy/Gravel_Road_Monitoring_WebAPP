@@ -114,11 +114,16 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
         # toggles this as a Leaflet layer; primary-frequency segments only.
         geojson_s3_key = None
         geojson_url = None
+        overlay_error: Optional[str] = None
         try:
             features = []
+            segs_total = 0
+            segs_missing_ring = 0
             for seg in results.get("all_segments") or []:
+                segs_total += 1
                 ring = seg.get("rect_coords")
                 if not ring or len(ring) < 4:
+                    segs_missing_ring += 1
                     continue
                 features.append({
                     "type": "Feature",
@@ -131,6 +136,15 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
                         "frequency": seg.get("frequency"),
                     },
                 })
+            if segs_total > 0 and not features:
+                # All segments lacked rect_coords — pixel→WGS84 transform never
+                # ran (typically a compound/unsupported CRS in the source DEM).
+                # Surface this so the UI can explain why the overlay is missing.
+                overlay_error = (
+                    f"None of the {segs_total} detected segments had geographic "
+                    f"coordinates — the source DEM's CRS could not be transformed "
+                    f"to WGS84. Re-upload with a standard CRS (e.g. EPSG:26915)."
+                )
             feature_collection = {"type": "FeatureCollection", "features": features}
 
             geojson_s3_key = f"corrugation_analysis/{job.user_id}/{job_id}/features.geojson"
@@ -145,11 +159,16 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
                     Params={"Bucket": settings.S3_BUCKET_RAW, "Key": geojson_s3_key},
                     ExpiresIn=604800,
                 )
-                logger.info(f"Job {job_id}: Corrugation GeoJSON uploaded ({len(features)} features)")
+                logger.info(
+                    f"Job {job_id}: Corrugation GeoJSON uploaded "
+                    f"({len(features)} features, {segs_missing_ring} skipped)",
+                )
             finally:
                 os.unlink(tmp_gj_path)
         except Exception as gj_err:
             logger.error(f"Job {job_id}: GeoJSON upload failed, continuing: {gj_err}")
+            overlay_error = f"{type(gj_err).__name__}: {gj_err}"
+            geojson_url = None
 
         # Step 5: Update job
         totals = results["totals_ft2"]
@@ -160,6 +179,7 @@ def analyze_corrugation_task(self, job_id: str, screenshot_base64: Optional[str]
         job.html_report_url = html_url
         job.features_geojson_s3_key = geojson_s3_key
         job.features_geojson_url = geojson_url
+        job.overlay_error = overlay_error
         job.low_area_ft2 = totals.get("LOW", 0.0)
         job.medium_area_ft2 = totals.get("MEDIUM", 0.0)
         job.high_area_ft2 = totals.get("HIGH", 0.0)

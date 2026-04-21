@@ -112,11 +112,16 @@ def analyze_crown_task(self, job_id: str, screenshot_base64: Optional[str] = Non
         # sampling line with a non-None severity, clipped to the polygon).
         geojson_s3_key = None
         geojson_url = None
+        overlay_error: Optional[str] = None
         try:
             features = []
+            segs_total = 0
+            segs_missing_geom = 0
             for seg in results.get("all_segments") or []:
+                segs_total += 1
                 geom = seg.get("geometry")
                 if not geom:
+                    segs_missing_geom += 1
                     continue
                 features.append({
                     "type": "Feature",
@@ -129,6 +134,12 @@ def analyze_crown_task(self, job_id: str, screenshot_base64: Optional[str] = Non
                         "line_x": seg.get("line_x"),
                     },
                 })
+            if segs_total > 0 and not features:
+                overlay_error = (
+                    f"None of the {segs_total} crown strips had geometry — the "
+                    f"source DEM's CRS could not be transformed to WGS84. "
+                    f"Re-upload with a standard CRS (e.g. EPSG:26915)."
+                )
             feature_collection = {"type": "FeatureCollection", "features": features}
 
             geojson_s3_key = f"crown_analysis/{job.user_id}/{job_id}/features.geojson"
@@ -143,11 +154,16 @@ def analyze_crown_task(self, job_id: str, screenshot_base64: Optional[str] = Non
                     Params={"Bucket": settings.S3_BUCKET_RAW, "Key": geojson_s3_key},
                     ExpiresIn=604800,
                 )
-                logger.info(f"Job {job_id}: Crown GeoJSON uploaded ({len(features)} features)")
+                logger.info(
+                    f"Job {job_id}: Crown GeoJSON uploaded "
+                    f"({len(features)} features, {segs_missing_geom} skipped)",
+                )
             finally:
                 os.unlink(tmp_gj_path)
         except Exception as gj_err:
             logger.error(f"Job {job_id}: GeoJSON upload failed, continuing: {gj_err}")
+            overlay_error = f"{type(gj_err).__name__}: {gj_err}"
+            geojson_url = None
 
         # Step 5: Update job with results
         totals = results['totals_ft']
@@ -158,6 +174,7 @@ def analyze_crown_task(self, job_id: str, screenshot_base64: Optional[str] = Non
         job.html_report_url = html_url
         job.features_geojson_s3_key = geojson_s3_key
         job.features_geojson_url = geojson_url
+        job.overlay_error = overlay_error
         job.low_severity_ft = totals.get('Low', 0.0)
         job.medium_severity_ft = totals.get('Medium', 0.0)
         job.high_severity_ft = totals.get('High', 0.0)

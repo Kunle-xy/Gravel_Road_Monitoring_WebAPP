@@ -112,38 +112,62 @@ def _s3_upload_file(local_path: str, bucket: str, key: str, content_type: str = 
 
 def _s3_upload_dir(local_dir: str, bucket: str, prefix: str) -> int:
     """
-    Upload directory to S3 recursively
-    Returns: number of files uploaded
+    Upload a directory to S3 in parallel and verify the upload count
+    matches the local file count.
+
+    Sequential uploads of huge tile pyramids (10k–100k PNGs for a deep
+    pyramid) take long enough that any single boto3 retry/throttle/network
+    blip can stretch the task to where the worker dies mid-upload — and
+    the previous code path then marked the file `tile_status="completed"`
+    based only on whether the function returned. Threaded uploads finish
+    much faster (smaller failure window) and the trailing assert refuses
+    to mark anything complete unless every local tile reached S3.
     """
-    count = 0
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    jobs: list[tuple[str, str, str]] = []
     for root, _, files in os.walk(local_dir):
         for f in files:
             path = os.path.join(root, f)
             rel = os.path.relpath(path, local_dir).replace("\\", "/")
-            s3_key = f"{prefix}/{rel}"
-
-            # Determine content type
+            key = f"{prefix}/{rel}"
             content_type = "image/png"
             if f.endswith(".webp"):
                 content_type = "image/webp"
             elif f.endswith(".json"):
                 content_type = "application/json"
+            jobs.append((path, key, content_type))
 
-            s3_client.upload_file(
-                path,
-                bucket,
-                s3_key,
-                ExtraArgs={
-                    "ContentType": content_type,
-                    "CacheControl": "public, max-age=31536000, immutable"
-                }
-            )
-            count += 1
+    expected = len(jobs)
+    if expected == 0:
+        raise RuntimeError(f"No local tiles found under {local_dir}")
+    logger.info(f"Uploading {expected} tiles to s3://{bucket}/{prefix} (16 threads)")
 
-            if count % 100 == 0:
-                logger.info(f"Uploaded {count} tiles...")
+    extra_args_for = lambda ctype: {
+        "ContentType": ctype,
+        "CacheControl": "public, max-age=31536000, immutable",
+    }
 
-    return count
+    def _upload(job: tuple[str, str, str]) -> None:
+        path, key, ctype = job
+        s3_client.upload_file(path, bucket, key, ExtraArgs=extra_args_for(ctype))
+
+    uploaded = 0
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        futures = [ex.submit(_upload, j) for j in jobs]
+        for fut in as_completed(futures):
+            fut.result()  # propagates the first failure → task fails (correct)
+            uploaded += 1
+            if uploaded % 500 == 0:
+                logger.info(f"Uploaded {uploaded}/{expected} tiles")
+
+    if uploaded != expected:
+        raise RuntimeError(
+            f"Tile upload incomplete: {uploaded}/{expected} reached "
+            f"s3://{bucket}/{prefix}",
+        )
+    logger.info(f"Tile upload verified: {uploaded}/{expected}")
+    return uploaded
 
 
 def _validate_tiff(path: str) -> dict:
@@ -229,15 +253,20 @@ def _to_cog(src_path: str, dst_path: str) -> None:
 
 def _to_8bit_for_tiles(src_path: str, dst_path: str) -> None:
     """
-    Convert raster to 8-bit for tile generation
-    Uses auto-scaling to map the data range to 0-255
+    Convert raster to 8-bit for tile generation.
 
-    gdal2tiles.py only works with 8-bit imagery, so we need to scale
-    16-bit, 32-bit, or float data types to 8-bit for visualization.
+    gdal2tiles only works with 8-bit imagery, so float / 16-bit DEMs need
+    scaling to 0-255. A blanket `-scale` (full min/max) gets compressed by
+    a single outlier pixel — typical DEMs have nodata sentinels or stray
+    spike values that flatten the road's actual elevation range to a few
+    grey levels, washing out detail at every zoom. Compute the 2/98
+    percentile (ignoring nodata) and clip to that range so the road's
+    elevation variation uses the full 0-255 dynamic range.
     """
     logger.info(f"Scaling to 8-bit for tiles: {src_path} -> {dst_path}")
 
-    # Check if already 8-bit
+    scale_args: list[str] = ["-scale"]  # fallback if percentile compute fails
+
     with rasterio.open(src_path) as ds:
         dtype = str(ds.dtypes[0])
         logger.info(f"Source data type: {dtype}")
@@ -248,12 +277,38 @@ def _to_8bit_for_tiles(src_path: str, dst_path: str) -> None:
             shutil.copy2(src_path, dst_path)
             return
 
-    # Scale to 8-bit
+        try:
+            import numpy as np
+            target = 2048
+            out_h = min(target, ds.height)
+            out_w = min(target, ds.width)
+            arr = ds.read(1, out_shape=(out_h, out_w), masked=True)
+            valid = arr.compressed()
+            if valid.size > 0:
+                p_lo, p_hi = np.percentile(valid, [2, 98])
+                if float(p_hi) - float(p_lo) > 0:
+                    scale_args = [
+                        "-scale", str(float(p_lo)), str(float(p_hi)), "0", "255",
+                    ]
+                    logger.info(
+                        f"Percentile scaling: [{p_lo:.3f}, {p_hi:.3f}] -> [0, 255]"
+                    )
+                else:
+                    logger.warning(
+                        "Percentile range is zero; falling back to gdal auto-scale",
+                    )
+            else:
+                logger.warning("All samples are nodata; falling back to gdal auto-scale")
+        except Exception as ex:
+            logger.warning(
+                f"Percentile compute failed ({ex}); falling back to gdal auto-scale",
+            )
+
     cmd = [
         "gdal_translate",
         "-of", "GTiff",
         "-ot", "Byte",
-        "-scale",  # Auto-scale to 0-255
+        *scale_args,
         "-co", "TILED=YES",
         "-co", "COMPRESS=LZW",
         "-co", "BIGTIFF=YES",

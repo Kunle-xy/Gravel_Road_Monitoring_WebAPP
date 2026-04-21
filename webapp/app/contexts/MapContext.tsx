@@ -42,30 +42,38 @@ export function MapProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Toggle layer visibility
+  // Toggle layer visibility. Side effects (addTo / removeLayer / fitBounds)
+  // must run OUTSIDE the state updater — React StrictMode invokes the
+  // updater twice in dev, which previously fired two competing animated
+  // fitBounds and made the layer flicker / not appear on some clicks.
   const toggleLayer = useCallback((fileId: string) => {
     const layerData = allLayers.get(fileId);
     if (!layerData || !map) return;
 
+    const isVisible = visibleLayers.has(fileId);
+    if (isVisible) {
+      map.removeLayer(layerData.layer);
+    } else {
+      layerData.layer.addTo(map);
+      if (layerData.bounds) {
+        // `animate: false` is load-bearing. With `updateWhenIdle: true` on
+        // the TileLayer, tiles only load on `moveend`. An animated fitBounds
+        // leaves a ~500 ms window where any other event (a stray map click,
+        // a second toggle, StrictMode double-fire) can interrupt the
+        // animation — moveend never fires for the intended viewport and
+        // the layer stays blank. A synchronous jump fires moveend once,
+        // immediately, so tile requests happen right away.
+        map.fitBounds(layerData.bounds, { padding: [50, 50], animate: false });
+      }
+    }
+
     setVisibleLayers((prev) => {
       const newVisible = new Set(prev);
-      if (newVisible.has(fileId)) {
-        // Hide layer
-        map.removeLayer(layerData.layer);
-        newVisible.delete(fileId);
-      } else {
-        // Show layer
-        layerData.layer.addTo(map);
-        newVisible.add(fileId);
-
-        // Fit bounds if available
-        if (layerData.bounds) {
-          map.fitBounds(layerData.bounds, { padding: [50, 50], animate: true, duration: 0.5 });
-        }
-      }
+      if (isVisible) newVisible.delete(fileId);
+      else newVisible.add(fileId);
       return newVisible;
     });
-  }, [allLayers, map]);
+  }, [allLayers, map, visibleLayers]);
 
   // Check if layer is visible
   const isLayerVisible = useCallback((fileId: string) => {
