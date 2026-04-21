@@ -119,19 +119,15 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
           attribution: file.filename,
           crossOrigin: 'anonymous',
           tileSize: 256,
-          keepBuffer: 2,
-          updateWhenIdle: false,
-          updateWhenZooming: true,
+          // Hold a few rings of off-screen tiles so panning at high zoom
+          // doesn't flash blank while the next batch is still fetching.
+          keepBuffer: 4,
+          // Wait for pan / zoom gestures to settle before firing new tile
+          // requests — prevents the request-and-abort storm that was
+          // leaving patchy holes when you zoomed in quickly.
+          updateWhenIdle: true,
+          updateWhenZooming: false,
           errorTileUrl: TRANSPARENT_PNG,
-        });
-        // Silence console noise from individual tile 404s (they're expected
-        // near the DEM edge). Uncomment the console.warn line if you want to
-        // log which tiles are missing.
-        layer.on('tileerror', (e) => {
-          (e as unknown as { tile?: HTMLImageElement }).tile?.style?.setProperty(
-            'display', 'none',
-          );
-          // console.warn('tile missing:', (e as any).coords, (e as any).tile?.src);
         });
 
         // Register layer with context (doesn't show it yet)
