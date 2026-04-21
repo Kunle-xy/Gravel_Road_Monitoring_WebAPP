@@ -105,17 +105,18 @@ export default function TiffFileItem({ file, onDelete }: TiffFileItemProps) {
         const TRANSPARENT_PNG =
           "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
-        // Long narrow DEMs fade to invisible at world-scale zooms because
-        // the road is sub-pixel. Hide the layer below z=15 and render the
-        // content pixels at full opacity so what's there actually shows.
-        const VISIBLE_MIN_ZOOM = 15;
+        // Don't cap the layer's minZoom: fitBounds on long road strips can
+        // settle below tile_min_zoom, and any cap there makes the layer
+        // invisible (map pans but nothing renders). minNativeZoom already
+        // tells Leaflet to downscale the deepest available tiles for lower
+        // zooms, and `bounds` keeps the request count bounded to the
+        // footprint, so this is safe.
         const layer = new L.TileLayer(tileUrl, {
           opacity: 1.0,
           bounds: tileBounds,
           maxZoom: 26,
           maxNativeZoom: maxNative,
           minNativeZoom: minZoomAllowed,
-          minZoom: VISIBLE_MIN_ZOOM,
           attribution: file.filename,
           crossOrigin: 'anonymous',
           tileSize: 256,
