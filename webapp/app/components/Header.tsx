@@ -21,8 +21,13 @@ const Header = () => {
         </Link>
 
         {/* Right Section - Gravel Road Iowa */}
-        <div className="text-lg sm:text-xl font-semibold whitespace-nowrap">
-          Gravel Road Monitoring System
+        <div className="flex flex-col items-end text-right">
+          <div className="text-lg sm:text-xl font-semibold whitespace-nowrap">
+            Gravel Road Monitoring System
+          </div>
+          <div className="text-xs opacity-75 whitespace-nowrap">
+            v1.0.0 &mdash; Developed by Kunle S Oguntoye (oguntoye@iastate.edu)
+          </div>
         </div>
       </div>
     </header>
