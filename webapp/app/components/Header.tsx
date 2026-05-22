@@ -26,7 +26,10 @@ const Header = () => {
             Gravel Road Monitoring System
           </div>
           <div className="text-xs opacity-75 whitespace-nowrap">
-            v1.0.0 &mdash; Developed by Kunle S Oguntoye (oguntoye@iastate.edu)
+            v1.0.0 &mdash; Developed by Kunle S Oguntoye
+          </div>
+          <div className="text-xs opacity-75 whitespace-nowrap">
+            oguntoye@iastate.edu
           </div>
         </div>
       </div>
