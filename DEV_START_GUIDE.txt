@@ -15,7 +15,7 @@ The API will be available at: http://localhost:8000
 API docs available at: http://localhost:8000/docs
 
 -------------------
-TERMINAL 2: Celery Worker
+TERMINAL 2: Celery Workeris the celery worker 
 -------------------
 cd FastAPI
 uv run celery -A app.celery_app worker --loglevel=info

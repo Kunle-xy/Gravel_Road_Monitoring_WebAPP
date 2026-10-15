@@ -104,32 +104,51 @@ def generate_pothole_html(elevation_data: np.ndarray, results: dict, job_id: str
     """Generate an interactive HTML report with 3D Plotly plot and results table."""
     import plotly.graph_objects as go
     import plotly.io as pio
+    from plotly.subplots import make_subplots
 
-    nrows, ncols = elevation_data.shape
-    x = np.arange(0, ncols)
-    y = np.arange(0, nrows)
-    X, Y = np.meshgrid(x, y)
+    # --- ORIENTATION TEST HARNESS (A / B / C) ---------------------------
+    # Z (elevation) is correct; only the X/Y footprint orientation is wrong.
+    # The symptom is a ~90° "rotation", so test the transpose/rotation family
+    # side by side and pick the panel that matches the real pothole on the map.
+    #   A = rotate 90° counter-clockwise   np.rot90(m, 1)
+    #   B = rotate 90° clockwise           np.rot90(m, 3)
+    #   C = transpose (swap X<->Y)         m.T
+    candidates = [
+        ("A — rot90 CCW", np.rot90(elevation_data, 1)),
+        ("B — rot90 CW", np.rot90(elevation_data, 3)),
+        ("C — transpose", elevation_data.T),
+    ]
 
-    fig = go.Figure(data=[
-        go.Surface(
-            z=elevation_data,
-            x=X, y=Y,
-            colorscale="Viridis",
-            opacity=0.9,
-            colorbar=dict(title="Elevation (m)"),
+    fig = make_subplots(
+        rows=3, cols=1,
+        specs=[[{"type": "surface"}], [{"type": "surface"}], [{"type": "surface"}]],
+        subplot_titles=[label for label, _ in candidates],
+        vertical_spacing=0.05,
+    )
+
+    for i, (label, zc) in enumerate(candidates, start=1):
+        h, w = zc.shape
+        Xc, Yc = np.meshgrid(np.arange(0, w), np.arange(0, h))
+        fig.add_trace(
+            go.Surface(
+                z=zc, x=Xc, y=Yc,
+                colorscale="Viridis",
+                opacity=0.9,
+                showscale=(i == 1),
+                colorbar=dict(title="Elev (m)"),
+            ),
+            row=i, col=1,
         )
-    ])
 
+    scene_cfg = dict(
+        xaxis_title="X", yaxis_title="Y", zaxis_title="Z (m)",
+        zaxis=dict(showspikes=False),
+    )
     fig.update_layout(
-        scene=dict(
-            xaxis_title="X (pixels)",
-            yaxis_title="Y (pixels)",
-            zaxis_title="Elevation (m)",
-            zaxis=dict(showspikes=False),
-        ),
-        width=800,
-        height=550,
-        margin=dict(l=0, r=0, t=0, b=0),
+        width=820,
+        height=1350,
+        margin=dict(l=0, r=0, t=24, b=0),
+        scene=scene_cfg, scene2=scene_cfg, scene3=scene_cfg,
     )
 
     plot_html = pio.to_html(fig, full_html=False, include_plotlyjs="cdn")
