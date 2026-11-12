@@ -36,7 +36,7 @@ async def create_corrugation_analysis(
     job = CorrugationAnalysisJob(
         user_id=current_user.id,
         tiff_file_id=req.tiff_file_id,
-        polygon_geojson=req.polygon_geojson,
+        polygon_geojson={**req.polygon_geojson, "road_direction": req.road_direction},
         line_interval=req.line_interval,
         dy_freq=req.dy_freq,
         sigma_samples=req.sigma_samples,

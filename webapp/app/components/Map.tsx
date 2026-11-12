@@ -825,14 +825,15 @@ export default function Map() {
     if (!selectedPolygon?.polygonId) return;
     const coordinates = corners.map((ll) => [ll.lng, ll.lat]);
     coordinates.push([...coordinates[0]]);
-    const geoJSON = { type: "Polygon" as const, coordinates: [coordinates] };
+    const previous = savedPolygons.find(p => p.id === selectedPolygon.polygonId);
+    const geoJSON = { ...previous?.geoJSON, type: "Polygon" as const, coordinates: [coordinates] };
     const b = selectedPolygon.getBounds();
     const bounds: [[number, number], [number, number]] = [
       [b.getSouth(), b.getWest()],
       [b.getNorth(), b.getEast()],
     ];
     updatePolygon(selectedPolygon.polygonId, { geoJSON, bounds });
-  }, [selectedPolygon, updatePolygon]);
+  }, [selectedPolygon, updatePolygon, savedPolygons]);
 
   const handlePolygonComplete = React.useCallback((polygon: L.Polygon) => {
     if (mapInstance) {
@@ -853,6 +854,9 @@ export default function Map() {
       const geoJSON = {
         type: "Polygon" as const,
         coordinates: [coordinates],
+        // Leaflet rectangles use SW, NW, NE, SE: edge 1 is horizontal.
+        // Keep this index stable through rotation and resizing, even for squares.
+        horizontal_edge_index: 1,
       };
 
       // Get bounds for the polygon

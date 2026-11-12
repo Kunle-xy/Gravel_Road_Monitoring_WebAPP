@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 import uuid as uuid_lib
 import re
@@ -147,6 +147,7 @@ class FolderWithFilesResponse(BaseModel):
 
 # Rut Analysis Schemas
 class RutAnalysisCreate(BaseModel):
+    road_direction: Literal["horizontal", "vertical"] = "horizontal"
     tiff_file_id: uuid_lib.UUID
     polygon_geojson: Dict[str, Any]  # GeoJSON polygon
     dy_freq: Optional[int] = 20  # Sampling frequency per 100 pixels (whole integers only)
@@ -270,6 +271,7 @@ class MultipartAbortRequest(BaseModel):
 
 # Crown Analysis Schemas
 class CrownAnalysisCreate(BaseModel):
+    road_direction: Literal["horizontal", "vertical"] = "horizontal"
     tiff_file_id: uuid_lib.UUID
     polygon_geojson: Dict[str, Any]
     spacing_m: Optional[float] = 0.05
@@ -334,6 +336,7 @@ class CrownAnalysisStatusResponse(BaseModel):
 
 # Corrugation Analysis Schemas
 class CorrugationAnalysisCreate(BaseModel):
+    road_direction: Literal["horizontal", "vertical"] = "horizontal"
     tiff_file_id: uuid_lib.UUID
     polygon_geojson: Dict[str, Any]
     line_interval: Optional[float] = 0.05

@@ -97,7 +97,7 @@ def create_profile_plot(profile: Dict[str, Any]) -> go.Figure:
             name=f'Rut ({rut_sev})', showlegend=True
         ))
 
-    title = f"x={profile['x']:.2f}m"
+    title = f"Road-axis offset={profile['x']:.2f}m"
     if crown:
         title += f" | Crown: {crown}"
     if rut_sev:

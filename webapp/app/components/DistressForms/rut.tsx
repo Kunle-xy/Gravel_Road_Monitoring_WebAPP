@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import RoadDirectionControl from "../RoadDirectionControl";
 import { usePolygons } from "@/app/contexts/PolygonContext";
 import { useMap } from "@/app/contexts/MapContext";
 
@@ -398,6 +399,7 @@ export default function RutForm() {
         method: "POST",
         body: JSON.stringify({
           tiff_file_id: selectedDemId,
+          road_direction: polygons.find(p => p.id === selectedPolygonId)?.roadDirection ?? "horizontal",
           polygon_geojson: polygon,
           dy_freq: sampling,
           dx: ruttingWidth,
@@ -498,6 +500,8 @@ export default function RutForm() {
             )
           }
         />
+
+        <RoadDirectionControl polygonId={selectedPolygonId} />
 
         {/* Parameters */}
         <div className="border-t border-slate-700 pt-2 mt-2">

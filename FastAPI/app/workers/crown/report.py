@@ -144,7 +144,7 @@ def generate_html_report(results: Dict[str, Any], job_id: str) -> str:
         plot_html = fig.to_html(full_html=False, include_plotlyjs=False)
         crown = profile.get('crown', 'None')
         rut = profile.get('rut_sev', 'None')
-        header = f"Line {profile['line_idx']} | x={profile['x']:.2f}m | Crown: {crown} | Rut: {rut}"
+        header = f"Line {profile['line_idx']} | Road-axis offset={profile['x']:.2f}m | Crown: {crown} | Rut: {rut}"
         profile_plots_html += f"""
         <div class="profile-card">
             <div class="profile-header">{header}</div>

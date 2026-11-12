@@ -116,6 +116,34 @@ Pool is configured in `app/database.py`: pool_size=20, max_overflow=10, pool_rec
 
 ## Distress Analysis Notes
 
+### Road direction and polygon rotation
+
+Rut, crown, and corrugation forms share a **Road direction** selection for
+each drawn polygon. **Horizontal** is the default. The direction describes
+the road before rotating the rectangle:
+
+| Road direction | Rut / crown profiles | Corrugation profiles |
+|---|---|---|
+| Horizontal | Across the road (local vertical) | Along the road (local horizontal) |
+| Vertical | Across the road (local horizontal) | Along the road (local vertical) |
+
+All profiles and map overlays follow polygon rotation, including square
+polygons. The original horizontal edge is tracked through rotation and
+resizing; the longest side is not used to guess road direction. Spacing
+and sampling distances retain their existing meter units. The DEM is not
+rotated or resampled.
+
+Each job saves its road direction and edge index in `polygon_geojson`.
+No database migration is required. Existing results are unchanged; rerun
+analysis to generate results with the new sampling behavior.
+
+After deploying, restart `fastapi` and `celery-analysis`, and deploy the
+updated frontend. Run the sampling regression checks from `FastAPI/` with:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
 ### Rut
 - Severity: Low (0.5-1.0"), Medium (1.0-3.0"), High (>3.0")
 - Iowa DOT deduct table lookup with density interpolation

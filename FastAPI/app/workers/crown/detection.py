@@ -21,10 +21,9 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
-from pyproj import Transformer
 from shapely.geometry import Polygon, LineString, box, mapping
 from shapely.ops import transform as shp_transform
-from rasterio.transform import rowcol
+from app.workers.sampling import SamplingFrame, sample_rowcol
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +228,7 @@ def analyze_crown_in_polygon(
     neighbor_range: int = 2
 ) -> Dict[str, Any]:
     """
-    Analyze crown distress within polygon by sampling along vertical lines.
+    Analyze crown distress within polygon by sampling across the polygon-aligned road axis.
 
     Returns results dict with:
         - totals_ft: linear feet per severity
@@ -237,6 +236,8 @@ def analyze_crown_in_polygon(
         - profiles: top 30 profile details for plotting
         - neighbor data if neighbor_eval is True
     """
+    frame = SamplingFrame(polygon, metadata)
+    polygon, metadata = frame.polygon, frame.metadata
     pix_m = float(np.mean(np.abs(metadata['resolution'])))
     min_x, min_y, max_x, max_y = polygon.bounds
     dx_feet = spacing_m * FEET_PER_METER
@@ -259,7 +260,7 @@ def analyze_crown_in_polygon(
     polygon_length_ft = polygon_length_m * FEET_PER_METER
 
     # Build a DEM-CRS → WGS84 transformer for the map-overlay strips
-    to_wgs84 = Transformer.from_crs(metadata['crs'], "EPSG:4326", always_xy=True)
+    to_wgs84 = frame
 
     def _project_geom(geom):
         return shp_transform(lambda x, y, z=None: to_wgs84.transform(x, y), geom)
@@ -290,7 +291,7 @@ def analyze_crown_in_polygon(
             depths = []
             for pt in sample_points:
                 try:
-                    row, col = rowcol(metadata['transform'], pt.x, pt.y)
+                    row, col = sample_rowcol(metadata['transform'], pt.x, pt.y)
                     if 0 <= row < elevation_data.shape[0] and 0 <= col < elevation_data.shape[1]:
                         val = elevation_data[row, col]
                         depths.append(np.nan if val == -32767 else float(val))
@@ -380,6 +381,8 @@ def analyze_crown_in_polygon(
         profiles = sorted(base_profiles or [], key=lambda d: d['rank'], reverse=True)[:30]
 
         return {
+            "road_direction": frame.road_direction,
+            "sampling_angle_degrees": frame.angle_degrees,
             'totals_ft': totals,
             'counts': counts,
             'profiles': profiles,
@@ -400,6 +403,8 @@ def analyze_crown_in_polygon(
                     f"Low={totals['Low']:.1f}ft, Med={totals['Medium']:.1f}ft, High={totals['High']:.1f}ft")
 
         return {
+            "road_direction": frame.road_direction,
+            "sampling_angle_degrees": frame.angle_degrees,
             'totals_ft': totals,
             'counts': counts,
             'profiles': profiles,

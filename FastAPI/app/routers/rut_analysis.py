@@ -46,7 +46,7 @@ async def create_rut_analysis(
     job = RutAnalysisJob(
         user_id=current_user.id,
         tiff_file_id=analysis_request.tiff_file_id,
-        polygon_geojson=analysis_request.polygon_geojson,
+        polygon_geojson={**analysis_request.polygon_geojson, "road_direction": analysis_request.road_direction},
         dy_freq=analysis_request.dy_freq,
         dx=analysis_request.dx,
         apply_smoothing=analysis_request.apply_smoothing,

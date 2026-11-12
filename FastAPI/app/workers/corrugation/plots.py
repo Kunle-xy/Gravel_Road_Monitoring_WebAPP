@@ -67,7 +67,7 @@ def create_profile_plot(profile: Dict[str, Any]) -> str:
             )
 
     fig.update_layout(
-        title=f"Y = {profile['transect_y']:.2f} m",
+        title=f"Cross-road offset = {profile['transect_y']:.2f} m",
         template="plotly_white",
         margin=dict(l=60, r=60, t=50, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),

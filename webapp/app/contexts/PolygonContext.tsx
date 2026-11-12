@@ -6,6 +6,7 @@ export interface DrawnPolygon {
   id: string;
   name: string;
   geoJSON: any; // GeoJSON Polygon
+  roadDirection?: 'horizontal' | 'vertical'; // Relative to the unrotated rectangle
   createdAt: Date;
   bounds?: [[number, number], [number, number]]; // Optional bounds for fitting
 }

@@ -12,7 +12,7 @@ Detects corrugation (wave-like surface distortion) in elevation profiles by:
 4. Computing drop depth (interpolated crest to valley, in inches).
 5. Classifying severity: Low (<1"), Medium (1–3"), High (>3").
 
-Also handles polygon-wide analysis with horizontal transect sampling.
+Also handles polygon-wide analysis with road-aligned transect sampling.
 """
 
 import logging
@@ -20,10 +20,9 @@ from typing import Dict, List, Tuple, Any, Optional
 
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
 from scipy.signal import find_peaks
 from shapely.geometry import Polygon, LineString
-from rasterio.transform import rowcol
+from app.workers.sampling import SamplingFrame, sample_rowcol
 
 logger = logging.getLogger(__name__)
 
@@ -209,16 +208,18 @@ def analyze_corrugation_in_polygon(
     max_wavelength_m: float = 2.0,
 ) -> Dict[str, Any]:
     """
-    Analyze corrugation within polygon using horizontal transect lines at a
+    Analyze corrugation within polygon using polygon-aligned, along-road transect lines at a
     single sampling frequency (dy_freq).
 
     Returns dict with totals, per-severity counts, and profile data for plots.
     """
+    frame = SamplingFrame(polygon, metadata)
+    polygon, metadata = frame.polygon, frame.metadata
     pix_m = float(np.mean(np.abs(metadata['resolution'])))
     min_x, min_y, max_x, max_y = polygon.bounds
     transect_ys = np.arange(min_y, max_y + line_interval, line_interval)
 
-    to_wgs84 = Transformer.from_crs(metadata['crs'], "EPSG:4326", always_xy=True)
+    to_wgs84 = frame
     half_width = line_interval / 2.0
     dx = (100.0 * pix_m) / float(dy_freq)
 
@@ -250,7 +251,7 @@ def analyze_corrugation_in_polygon(
         depths = []
         for pt in pts:
             try:
-                row, col = rowcol(metadata['transform'], pt.x, pt.y)
+                row, col = sample_rowcol(metadata['transform'], pt.x, pt.y)
                 if 0 <= row < elevation_data.shape[0] and 0 <= col < elevation_data.shape[1]:
                     val = elevation_data[row, col]
                     if val == -32767 or (metadata.get('nodata') is not None and val == metadata['nodata']):
@@ -345,6 +346,8 @@ def analyze_corrugation_in_polygon(
                 f"polygon={polygon_area_sqft:.1f}ft2")
 
     return {
+        "road_direction": frame.road_direction,
+        "sampling_angle_degrees": frame.angle_degrees,
         "totals_ft2": totals,
         "counts": counts,
         "total_area_ft2": total_area,

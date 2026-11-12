@@ -11,11 +11,10 @@ from typing import Dict, List, Any
 
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
-from rasterio.transform import rowcol
 from shapely.geometry import Polygon, LineString
 
 from app.workers.rut.constants import get_deduct_value
+from app.workers.sampling import SamplingFrame, sample_rowcol
 
 logger = logging.getLogger(__name__)
 
@@ -196,18 +195,20 @@ def analyze_ruts_in_polygon(
     neighbor_range: int = 2
 ) -> Dict[str, Any]:
     """
-    Analyze ruts within polygon by sampling along vertical lines.
+    Analyze ruts within polygon by sampling across the polygon-aligned road axis.
     Optionally test neighboring sampling frequencies.
 
     Returns results dictionary with detected ruts, statistics,
     density/deduct data, and cross-section samples for plotting.
     """
+    frame = SamplingFrame(polygon, metadata)
+    polygon, metadata = frame.polygon, frame.metadata
     polygon_area_sqm = polygon.area
     polygon_area_sqft = polygon_area_sqm * 10.7639
     logger.info(f"Job {job_id}: Polygon area = {polygon_area_sqft:.2f} sq ft")
 
     # Build transformer to reproject rut coordinates to WGS84 for the map overlay
-    to_wgs84 = Transformer.from_crs(metadata['crs'], "EPSG:4326", always_xy=True)
+    to_wgs84 = frame
 
     if neighbor_eval:
         start_freq = max(1, dy_freq - neighbor_range)
@@ -255,7 +256,7 @@ def analyze_ruts_in_polygon(
             depths = []
             for pt in sample_points:
                 try:
-                    row, col = rowcol(metadata['transform'], pt.x, pt.y)
+                    row, col = sample_rowcol(metadata['transform'], pt.x, pt.y)
                     if 0 <= row < elevation_data.shape[0] and 0 <= col < elevation_data.shape[1]:
                         depth = elevation_data[row, col]
                         if depth == -32767:
@@ -281,7 +282,7 @@ def analyze_ruts_in_polygon(
                 rut['line_x'] = float(x)
                 rut['frequency'] = freq
                 # Build a rectangle footprint in the DEM CRS: length = h1→h2
-                # along the (vertical) sampling line, width = dx centered on the
+                # along the local cross-road sampling line, width = dx centered on the
                 # line. Reproject the four corners to WGS84 so the frontend can
                 # draw a polygon directly.
                 try:
@@ -375,6 +376,8 @@ def analyze_ruts_in_polygon(
         logger.info(f"Job {job_id}: Saved {len(cross_sections)} cross-sections for plotting")
 
     return {
+        "road_direction": frame.road_direction,
+        "sampling_angle_degrees": frame.angle_degrees,
         'ruts': primary_results['ruts'],
         'total_ruts_detected': primary_results['total_ruts_detected'],
         'low_severity_count': primary_results['low_severity_count'],

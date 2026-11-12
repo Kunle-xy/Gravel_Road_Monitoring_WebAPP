@@ -131,7 +131,7 @@ def create_profile_plot(cross_section: Dict[str, Any]) -> go.Figure:
 
     fig.update_layout(
         title=dict(
-            text=f"x = {line_x:.2f} m{title_suffix}",
+            text=f"Road-axis offset = {line_x:.2f} m{title_suffix}",
             font=dict(size=12)
         ),
         xaxis_title="Distance along line (m)",

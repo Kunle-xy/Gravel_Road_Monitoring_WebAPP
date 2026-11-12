@@ -35,7 +35,7 @@ async def create_crown_analysis(
     job = CrownAnalysisJob(
         user_id=current_user.id,
         tiff_file_id=analysis_request.tiff_file_id,
-        polygon_geojson=analysis_request.polygon_geojson,
+        polygon_geojson={**analysis_request.polygon_geojson, "road_direction": analysis_request.road_direction},
         spacing_m=analysis_request.spacing_m,
         dy_freq=analysis_request.dy_freq,
         apply_smoothing=analysis_request.apply_smoothing,

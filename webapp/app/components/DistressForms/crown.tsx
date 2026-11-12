@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import RoadDirectionControl from "../RoadDirectionControl";
 import { usePolygons } from "@/app/contexts/PolygonContext";
 import { useMap } from "@/app/contexts/MapContext";
 import html2canvas from "html2canvas-pro";
@@ -270,6 +271,7 @@ export default function CrownForm() {
         method: "POST",
         body: JSON.stringify({
           tiff_file_id: selectedDemId,
+          road_direction: polygons.find(p => p.id === selectedPolygonId)?.roadDirection ?? "horizontal",
           polygon_geojson: selectedPolygon.geoJSON,
           spacing_m: spacing,
           dy_freq: sampling,
@@ -348,6 +350,8 @@ export default function CrownForm() {
         } />
 
         {/* Parameters */}
+        <RoadDirectionControl polygonId={selectedPolygonId} />
+
         <div className="border-t border-slate-700 pt-2 mt-2">
           <RowGrid label="Line spacing (meters)" control={
             <input type="number" min="0.01" step="0.01" value={spacing}

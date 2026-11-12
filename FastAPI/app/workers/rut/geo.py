@@ -120,7 +120,8 @@ def extract_polygon_extent(
                 'resolution': src.res,
                 'width': window.width,
                 'height': window.height,
-                'nodata': src.nodata
+                'nodata': src.nodata,
+                'polygon_geojson': polygon_geojson,
             }
 
             return band1, metadata, polygon_transformed
