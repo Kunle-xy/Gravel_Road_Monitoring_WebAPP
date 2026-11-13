@@ -22,17 +22,6 @@ export function resizeEdge(points: XY[], edge: number, delta: XY, minimum = 2): 
     ? { x: p.x + offset * nx, y: p.y + offset * ny } : p);
 }
 
-export function samplingPreview(points: XY[], edge: number, direction: 'horizontal' | 'vertical') {
-  const at = (i: number) => points[(edge + i) % 4];
-  const lerp = (a: XY, b: XY, t: number): XY => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-  const across: XY[][] = [], along: XY[][] = [];
-  for (const t of [.2, .4, .6, .8]) {
-    across.push([lerp(at(0), at(1), t), lerp(at(3), at(2), t)]);
-    along.push([lerp(at(0), at(3), t), lerp(at(1), at(2), t)]);
-  }
-  return direction === 'horizontal' ? { across, along } : { across: along, along: across };
-}
-
 export interface DragSession {
   move: (event: PointerEvent) => void;
   finish: () => void;

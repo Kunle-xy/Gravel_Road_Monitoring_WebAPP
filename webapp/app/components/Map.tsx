@@ -13,7 +13,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useMap } from "../contexts/MapContext";
 import { usePolygons } from "../contexts/PolygonContext";
-import { attachPointerDrag, rotatePoints, resizeEdge, samplingPreview } from "../lib/polygonEditing";
+import { attachPointerDrag, rotatePoints, resizeEdge } from "../lib/polygonEditing";
 
 // fix default marker assets in Next
 import iconUrl from "leaflet/dist/images/marker-icon.png";
@@ -591,37 +591,6 @@ function EdgeResizeHandles({ map, polygon, onCommit }: {
   return null;
 }
 
-function SamplingPreview({ map, polygon, direction, edge }: {
-  map: L.Map; polygon: DrawnLayer; direction: 'horizontal' | 'vertical'; edge: number;
-}) {
-  React.useEffect(() => {
-    const layer = L.layerGroup().addTo(map);
-    const colors = { across: '#fbbf24', along: '#22d3ee' };
-    const guides = Object.fromEntries(Object.entries(colors).map(([kind, color]) => [kind,
-      Array.from({ length: 4 }, () => L.polyline([], {
-        color, weight: 1.5, dashArray: '5 5', interactive: false,
-      }).addTo(layer)),
-    ]));
-    const refresh = () => {
-      const lines = samplingPreview(projectedCorners(map, polygon), edge, direction);
-      for (const kind of ['across', 'along'] as const) {
-        lines[kind].forEach((points, i) => guides[kind][i].setLatLngs(
-          points.map(p => map.unproject(L.point(p.x, p.y))),
-        ));
-      }
-    };
-    refresh();
-    polygon.on('reshape', refresh);
-    map.on('zoomend', refresh);
-    return () => {
-      polygon.off('reshape', refresh);
-      map.off('zoomend', refresh);
-      map.removeLayer(layer);
-    };
-  }, [map, polygon, direction, edge]);
-  return null;
-}
-
 export default function Map() {
   const [mode, setMode] = React.useState<Mode>("pan");
   const [showSatellite, setShowSatellite] = React.useState(false);
@@ -632,7 +601,6 @@ export default function Map() {
     polygons: savedPolygons, selectedPolygonId, setSelectedPolygonId } = usePolygons();
   const activePolygon = polygons.find(p => p.polygonId === selectedPolygonId);
   const selectedPolygon = selectedPolygonId === dismissedPolygonId ? null : activePolygon;
-  const selectedSettings = savedPolygons.find(p => p.id === selectedPolygonId);
   const center: [number, number] = [41.878, -93.097];
 
   // Hide editing handles without losing the shared analysis selection/settings.
@@ -800,10 +768,6 @@ export default function Map() {
         <DrawPolygonControl mode={mode} setMode={setMode} />
         <ClearPolygonsControl onClear={handleClearPolygons} />
         <PolygonDrawing mode={mode} onPolygonComplete={handlePolygonComplete} />
-        {mapInstance && activePolygon && selectedSettings && (
-          <SamplingPreview map={mapInstance} polygon={activePolygon}
-            direction={selectedSettings.roadDirection} edge={selectedSettings.geoJSON.horizontal_edge_index ?? 1} />
-        )}
         {mapInstance && selectedPolygon && (
           <>
             <EdgeResizeHandles
@@ -821,14 +785,7 @@ export default function Map() {
           </>
         )}
       </MapContainer>
-      {selectedSettings && (
-        <div className="absolute bottom-8 left-12 z-[500] pointer-events-none rounded bg-slate-900/90 px-3 py-2 text-xs text-white">
-          <div>{selectedSettings.name} · {selectedSettings.roadDirection === 'vertical' ? 'Vertical' : 'Horizontal'} road</div>
-          <div className="text-amber-300">Dashed amber: rut / crown sampling</div>
-          <div className="text-cyan-300">Dashed cyan: corrugation sampling</div>
-          <div className="text-slate-300">Direction preview only; run analysis for results.</div>
-        </div>
-      )}
+
     </div>
   );
 }

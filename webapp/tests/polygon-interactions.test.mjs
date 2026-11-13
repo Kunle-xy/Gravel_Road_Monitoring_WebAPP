@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 const loadModule = createRequire(import.meta.url);
 const { createPolygonStore, polygonSelectionKey } = loadModule(join(process.env.POLYGON_TEST_BUILD_DIR, 'polygonStore.js'));
-const { rotatePoints, resizeEdge, samplingPreview, attachPointerDrag } = loadModule(join(process.env.POLYGON_TEST_BUILD_DIR, 'polygonEditing.js'));
+const { rotatePoints, resizeEdge, attachPointerDrag } = loadModule(join(process.env.POLYGON_TEST_BUILD_DIR, 'polygonEditing.js'));
 const shape = () => ({ type: 'Polygon', coordinates: [[[0, 0], [0, 4], [8, 4], [8, 0], [0, 0]]], horizontal_edge_index: 1 });
 const input = name => ({ name, geoJSON: shape() });
 
@@ -93,20 +93,6 @@ test('resizing cannot cross the opposite edge and invert the polygon', () => {
   assert.deepEqual(resized[3], points[3]);
 });
 
-test('direction preview follows the stable edge at all rotations and both road directions', () => {
-  const base = [{ x: 0, y: 0 }, { x: 0, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 0 }];
-  for (const angle of [0, Math.PI / 6, Math.PI / 2, Math.PI * .8]) {
-    const points = rotatePoints(base, { x: 4, y: 2 }, angle);
-    for (const direction of ['horizontal', 'vertical']) {
-      const { across, along } = samplingPreview(points, 1, direction);
-      const vector = line => ({ x: line[1].x - line[0].x, y: line[1].y - line[0].y });
-      const x = vector(along[0]), y = vector(across[0]);
-      const target = angle + (direction === 'vertical' ? Math.PI / 2 : 0);
-      assert.ok(Math.abs(x.x * Math.sin(target) - x.y * Math.cos(target)) < 1e-8);
-      assert.ok(Math.abs(x.x * y.x + x.y * y.y) < 1e-8);
-    }
-  }
-});
 
 function pointer(type, values = {}) {
   return Object.assign(new Event(type, { cancelable: true }), { button: 0, pointerId: 1, ...values });

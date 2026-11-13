@@ -110,6 +110,38 @@ Common causes:
 2. Check job status in DB: `SELECT status, error_message FROM rut_analysis_jobs WHERE id='...';`
 3. Restart worker: `sudo systemctl restart celery-analysis`
 
+### Some analyses use an old algorithm despite deploying new code
+
+Check for legacy workers as well as the two dedicated workers:
+
+```bash
+systemctl list-units --type=service --all 'celery*'
+systemctl show celery-worker celery-analysis celery-tiles --property=Id,MainPID,ExecMainStartTimestamp
+```
+
+The historical `celery-worker.service` consumes both `celery` and `tiles`.
+If it runs alongside the dedicated services, it can execute analysis jobs using
+Python modules loaded before the latest deployment. Restarting only
+`celery-analysis` does not update that other consumer. Recycling Celery child
+processes also does not guarantee module reload from disk.
+
+After confirming/draining work in progress, retire that legacy service:
+
+```bash
+sudo systemctl disable --now celery-worker
+systemctl is-active celery-worker celery-analysis celery-tiles
+systemctl is-enabled celery-worker celery-analysis celery-tiles
+```
+
+Expected states, in order: `inactive`, `active`, `active`; and `disabled`,
+`enabled`, `enabled`. If the obsolete service does not exist on a fresh server,
+there is nothing to disable. Do not run the legacy background-worker scripts
+alongside the dedicated services. After deployment, restart all intended
+consumers of a changed queue and check their startup times.
+
+Affected completed results must be rerun; removing an old worker does not
+rewrite their stored reports or overlays.
+
 ## DB Connection Pool
 
 Pool is configured in `app/database.py`: pool_size=20, max_overflow=10, pool_recycle=3600, pool_pre_ping=True. Handles ~30 concurrent connections across FastAPI + workers.
@@ -140,10 +172,7 @@ without resetting the analysis selection. A newly drawn polygon starts with
 Horizontal selected. Drawn polygons/settings currently live in the dashboard
 session; a full page reload clears them.
 
-The selected polygon displays a live, illustrative direction preview: dashed
-amber lines show rut/crown sampling and dashed cyan lines show corrugation
-sampling. These are direction guides, not the actual sampling density or
-detected-distress results. Rotation/resize commits on release, cancellation,
+Rotation/resize commits on release, cancellation,
 window blur, or editing-handle cleanup. Analyses are blocked during an active
 drag so partially edited geometry is not submitted.
 

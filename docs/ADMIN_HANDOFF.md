@@ -915,6 +915,12 @@ Each `is-active` line should be `active`; each `is-enabled` line should be
 `enabled`. The health response reports `status: healthy`, but it is only a
 process-level response, not a comprehensive dependency or job-processing test.
 
+When taking over an existing server, also check for a historical
+`celery-worker.service` that consumes both queues. It must not compete with the
+two dedicated services using code loaded before deployment. Drain its work and
+stop/disable that legacy service before accepting new jobs. See
+[the mixed-version worker troubleshooting steps](operations.md#some-analyses-use-an-old-algorithm-despite-deploying-new-code).
+
 ```bash
 sudo journalctl -u fastapi -n 80 --no-pager
 sudo journalctl -u celery-tiles -n 80 --no-pager
