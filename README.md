@@ -80,5 +80,6 @@ All use Iowa DOT severity thresholds: Low (<1"), Medium (1-3"), High (>3").
 
 ## Docs
 
+- [`docs/ADMIN_HANDOFF.md`](docs/ADMIN_HANDOFF.md) — Complete administrator handoff and fresh-server tutorial, including PostgreSQL, Redis, AWS, Cloudflare, systemd, frontend hosting, data transfer, and backups.
 - `docs/deployment.md` — Server setup, services, AWS config
 - `docs/operations.md` — Common tasks, troubleshooting, monitoring

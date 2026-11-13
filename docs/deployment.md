@@ -1,5 +1,10 @@
 # Deployment Guide
 
+For a complete fresh-server installation or administrator transfer, follow
+the [Administrator Handoff Tutorial](ADMIN_HANDOFF.md). This page records the
+existing deployment layout; its account names and domains are not defaults for
+a new installation.
+
 ## Server Map
 
 | Role | Host | What runs |
