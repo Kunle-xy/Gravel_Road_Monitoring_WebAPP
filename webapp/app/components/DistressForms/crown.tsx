@@ -4,10 +4,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import { polygonSelectionKey } from "../../lib/polygonStore";
 import RoadDirectionControl from "../RoadDirectionControl";
 import { usePolygons } from "@/app/contexts/PolygonContext";
 import { useMap } from "@/app/contexts/MapContext";
-import html2canvas from "html2canvas-pro";
 
 const CROWN_SEVERITY_COLORS: Record<string, string> = {
   Low: "#16a34a",
@@ -73,8 +73,7 @@ export default function CrownForm() {
   const [demFiles, setDemFiles] = useState<DemFile[]>([]);
   const [selectedDemId, setSelectedDemId] = useState<string>("");
   const [loadingFiles, setLoadingFiles] = useState(true);
-  const { polygons } = usePolygons();
-  const [selectedPolygonId, setSelectedPolygonId] = useState<string>("");
+  const { polygons, selectedPolygonId, setSelectedPolygonId, editingPolygonId, getAnalysisSelection, isAnalysisSelectionCurrent } = usePolygons();
 
   // Parameters
   const [spacing, setSpacing] = useState(0.05);
@@ -89,6 +88,10 @@ export default function CrownForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisResults | null>(null);
+  const [submittedSelectionKey, setSubmittedSelectionKey] = useState<string | null>(null);
+  const selectionKey = polygonSelectionKey(polygons.find(p => p.id === selectedPolygonId), selectedDemId);
+  const resultsStale = submittedSelectionKey !== null && (submittedSelectionKey !== selectionKey || editingPolygonId === selectedPolygonId);
+  const overlayGeneration = useRef(0);
 
   // Map overlay of classified crown strips
   const { map } = useMap();
@@ -105,6 +108,7 @@ export default function CrownForm() {
   };
 
   const clearCrownOverlay = React.useCallback(() => {
+    overlayGeneration.current += 1;
     if (overlayLayerRef.current && map) {
       map.removeLayer(overlayLayerRef.current);
     }
@@ -112,6 +116,8 @@ export default function CrownForm() {
   }, [map]);
 
   const handleToggleOverlay = async () => {
+    if (!isAnalysisSelectionCurrent(submittedSelectionKey, selectedDemId)) { showToast("Polygon or direction changed. Run analysis again.", "info"); return; }
+    const generation = overlayGeneration.current;
     if (overlayOn) {
       clearCrownOverlay();
       setOverlayOn(false);
@@ -131,6 +137,7 @@ export default function CrownForm() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const gj = await res.json();
       const L = (await import("leaflet")).default;
+      if (generation !== overlayGeneration.current || !isAnalysisSelectionCurrent(submittedSelectionKey, selectedDemId)) return;
       const layer = L.geoJSON(gj, {
         style: (feature) => {
           const sev = feature?.properties?.severity as string | undefined;
@@ -176,7 +183,7 @@ export default function CrownForm() {
   useEffect(() => {
     clearCrownOverlay();
     setOverlayOn(false);
-  }, [jobId, clearCrownOverlay]);
+  }, [jobId, selectionKey, editingPolygonId, clearCrownOverlay]);
 
   // Fetch DEM files
   useEffect(() => {
@@ -204,17 +211,21 @@ export default function CrownForm() {
   // Poll for job status
   useEffect(() => {
     if (!jobId || !isAnalyzing) return;
+    let active = true;
     const pollInterval = setInterval(async () => {
       try {
         const response = await fetchWithAuth(`${API_ENDPOINTS.CROWN.BASE}/${jobId}/status`);
         if (response.ok) {
           const data: AnalysisResults = await response.json();
+          if (!active) return;
           setResults(data);
           if (data.status === "completed") {
+            active = false;
             setIsAnalyzing(false);
             showToast(`Analysis complete! Total: ${data.total_linear_ft.toFixed(1)} linear feet.`, "success");
             clearInterval(pollInterval);
           } else if (data.status === "failed") {
+            active = false;
             setIsAnalyzing(false);
             showToast(data.error_message || "Analysis failed", "error");
             clearInterval(pollInterval);
@@ -222,7 +233,7 @@ export default function CrownForm() {
         }
       } catch (error) { console.error("Polling error:", error); }
     }, 2000);
-    return () => clearInterval(pollInterval);
+    return () => { active = false; clearInterval(pollInterval); };
   }, [jobId, isAnalyzing]);
 
   const validateForm = (): boolean => {
@@ -258,28 +269,21 @@ export default function CrownForm() {
     setIsAnalyzing(true); setResults(null); setJobId(null);
 
     try {
-      let screenshotBase64 = null;
-      try {
-        const canvas = await html2canvas(document.body, { allowTaint: true, useCORS: true, scale: 1 });
-        screenshotBase64 = canvas.toDataURL("image/png").split(",")[1];
-      } catch { /* continue without screenshot */ }
-
-      const selectedPolygon = polygons.find(p => p.id === selectedPolygonId);
-      if (!selectedPolygon) throw new Error("Selected polygon not found");
+      const selection = getAnalysisSelection(selectedDemId);
+      setSubmittedSelectionKey(selection.key);
 
       const response = await fetchWithAuth(API_ENDPOINTS.CROWN.BASE, {
         method: "POST",
         body: JSON.stringify({
           tiff_file_id: selectedDemId,
-          road_direction: polygons.find(p => p.id === selectedPolygonId)?.roadDirection ?? "horizontal",
-          polygon_geojson: selectedPolygon.geoJSON,
+          road_direction: selection.road_direction,
+          polygon_geojson: selection.polygon_geojson,
           spacing_m: spacing,
           dy_freq: sampling,
           apply_smoothing: gaussian,
           gaussian_sigma: sigma,
           neighbor_eval: neighborEval,
           neighbor_range: neighborRange,
-          screenshot_base64: screenshotBase64,
         }),
       });
 
@@ -351,6 +355,11 @@ export default function CrownForm() {
 
         {/* Parameters */}
         <RoadDirectionControl polygonId={selectedPolygonId} />
+        {resultsStale && (
+          <p role="status" className="my-2 rounded border border-amber-600/50 bg-amber-900/20 p-2 text-xs text-amber-300">
+            Polygon or road direction changed. Results below belong to the previous settings. Run analysis again to update them.
+          </p>
+        )}
 
         <div className="border-t border-slate-700 pt-2 mt-2">
           <RowGrid label="Line spacing (meters)" control={
@@ -440,7 +449,7 @@ export default function CrownForm() {
                   <button
                     type="button"
                     onClick={handleToggleOverlay}
-                    disabled={overlayLoading}
+                    disabled={overlayLoading || resultsStale}
                     className={`flex items-center justify-center gap-1.5 flex-1 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors shadow-lg ${
                       overlayOn
                         ? "bg-emerald-600 text-white hover:bg-emerald-700"
@@ -485,9 +494,9 @@ export default function CrownForm() {
         {/* Action Button */}
         <div className="pt-3 mt-3 border-t border-slate-700">
           <button onClick={handleRunAnalysis}
-            disabled={isAnalyzing || loadingFiles || demFiles.length === 0 || polygons.length === 0 || !selectedPolygonId}
+            disabled={isAnalyzing || editingPolygonId !== null || loadingFiles || demFiles.length === 0 || polygons.length === 0 || !selectedPolygonId}
             className={`font-bold py-2.5 px-4 rounded-lg text-[13px] mx-auto block transition-all shadow-lg ${
-              isAnalyzing || loadingFiles || demFiles.length === 0 || polygons.length === 0 || !selectedPolygonId
+              isAnalyzing || editingPolygonId !== null || loadingFiles || demFiles.length === 0 || polygons.length === 0 || !selectedPolygonId
                 ? "bg-slate-700 text-slate-500 cursor-not-allowed"
                 : "bg-red-700 text-white hover:bg-red-800 hover:shadow-xl"
             }`}>

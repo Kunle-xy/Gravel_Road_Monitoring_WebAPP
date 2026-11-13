@@ -133,6 +133,31 @@ resizing; the longest side is not used to guess road direction. Spacing
 and sampling distances retain their existing meter units. The DEM is not
 rotated or resampled.
 
+The map and the three analysis forms use the same selected polygon. Each
+polygon retains its own Horizontal/Vertical choice when switching forms or
+selecting another polygon. Clicking an empty map area hides editing handles
+without resetting the analysis selection. A newly drawn polygon starts with
+Horizontal selected. Drawn polygons/settings currently live in the dashboard
+session; a full page reload clears them.
+
+The selected polygon displays a live, illustrative direction preview: dashed
+amber lines show rut/crown sampling and dashed cyan lines show corrugation
+sampling. These are direction guides, not the actual sampling density or
+detected-distress results. Rotation/resize commits on release, cancellation,
+window blur, or editing-handle cleanup. Analyses are blocked during an active
+drag so partially edited geometry is not submitted.
+
+Changing the polygon, DEM, or road direction removes old overlays and marks
+previous results as requiring a rerun. An already submitted job remains a
+snapshot of its original settings; changing controls does not recalculate it.
+Late overlay/status responses must not replace a newer selection or job.
+
+Frontend interaction regression checks, from `webapp/`:
+
+```bash
+npm run test:polygons
+```
+
 Each job saves its road direction and edge index in `polygon_geojson`.
 No database migration is required. Existing results are unchanged; rerun
 analysis to generate results with the new sampling behavior.

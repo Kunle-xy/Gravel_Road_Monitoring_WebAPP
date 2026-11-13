@@ -13,6 +13,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useMap } from "../contexts/MapContext";
 import { usePolygons } from "../contexts/PolygonContext";
+import { attachPointerDrag, rotatePoints, resizeEdge, samplingPreview } from "../lib/polygonEditing";
 
 // fix default marker assets in Next
 import iconUrl from "leaflet/dist/images/marker-icon.png";
@@ -51,7 +52,7 @@ function LabelsToggleControl({
   const leafletMap = useLeafletMap();
   const btnRef = React.useRef<HTMLAnchorElement | null>(null);
   const showLabelsRef = React.useRef(showLabels);
-  showLabelsRef.current = showLabels;
+  React.useLayoutEffect(() => { showLabelsRef.current = showLabels; }, [showLabels]);
 
   // Create control once
   React.useEffect(() => {
@@ -118,7 +119,7 @@ function DrawPolygonControl({
   const leafletMap = useLeafletMap();
   const btnRef = React.useRef<HTMLAnchorElement | null>(null);
   const modeRef = React.useRef(mode);
-  modeRef.current = mode;
+  React.useLayoutEffect(() => { modeRef.current = mode; }, [mode]);
 
   // Create control once
   React.useEffect(() => {
@@ -185,7 +186,7 @@ function ClearPolygonsControl({
 }) {
   const leafletMap = useLeafletMap();
   const onClearRef = React.useRef(onClear);
-  onClearRef.current = onClear;
+  React.useLayoutEffect(() => { onClearRef.current = onClear; }, [onClear]);
 
   React.useEffect(() => {
     const ClearControl = L.Control.extend({
@@ -344,7 +345,7 @@ function PanToggleControl({
   const leafletMap = useLeafletMap();
   const btnRef = React.useRef<HTMLAnchorElement | null>(null);
   const modeRef = React.useRef(mode);
-  modeRef.current = mode;
+  React.useLayoutEffect(() => { modeRef.current = mode; }, [mode]);
 
   // Create control once
   React.useEffect(() => {
@@ -404,399 +405,220 @@ function PanToggleControl({
 
 type DrawnLayer = L.Polygon & { polygonId?: string; label?: L.Marker };
 
-/** Marker offset (pixels) above the polygon center for the rotate handle. */
-const ROTATE_HANDLE_OFFSET_PX = 38;
+function projectedCorners(map: L.Map, polygon: DrawnLayer): L.Point[] {
+  return (polygon.getLatLngs()[0] as L.LatLng[]).map(ll => map.project(ll));
+}
 
-function rotateLatLngsAroundCenterPx(
-  map: L.Map,
-  centerPt: L.Point,
-  corners: L.LatLng[],
-  deltaRad: number,
-): L.LatLng[] {
-  const cos = Math.cos(deltaRad);
-  const sin = Math.sin(deltaRad);
-  return corners.map((ll) => {
-    const p = map.latLngToLayerPoint(ll);
-    const dx = p.x - centerPt.x;
-    const dy = p.y - centerPt.y;
-    const rx = dx * cos - dy * sin;
-    const ry = dx * sin + dy * cos;
-    return map.layerPointToLatLng(L.point(centerPt.x + rx, centerPt.y + ry));
+function polygonCenter(map: L.Map, polygon: DrawnLayer): L.Point {
+  const points = projectedCorners(map, polygon);
+  return L.point(points.reduce((sum, p) => sum + p.x, 0) / points.length,
+    points.reduce((sum, p) => sum + p.y, 0) / points.length);
+}
+
+function pauseMapEditing(map: L.Map): () => void {
+  const handlers = [map.dragging, map.boxZoom, map.scrollWheelZoom,
+    map.doubleClickZoom, map.touchZoom, map.keyboard];
+  const previous = handlers.map(handler => handler.enabled());
+  handlers.forEach(handler => handler.disable());
+  return () => handlers.forEach((handler, i) => {
+    if (previous[i]) handler.enable();
   });
 }
 
-function RotationHandle({
-  map,
-  polygon,
-  onCommit,
-  onDismiss,
-}: {
-  map: L.Map;
-  polygon: DrawnLayer;
-  onCommit: (corners: L.LatLng[]) => void;
-  onDismiss: () => void;
+function RotationHandle({ map, polygon, onCommit, onDismiss }: {
+  map: L.Map; polygon: DrawnLayer;
+  onCommit: (polygon: DrawnLayer) => void; onDismiss: () => void;
 }) {
+  const { beginPolygonEdit, finishPolygonEdit } = usePolygons();
   React.useEffect(() => {
-    const computeHandleLatLng = () => {
-      const centerPt = map.latLngToLayerPoint(polygon.getBounds().getCenter());
-      return map.layerPointToLatLng(L.point(centerPt.x, centerPt.y - ROTATE_HANDLE_OFFSET_PX));
+    const position = () => {
+      const center = polygonCenter(map, polygon);
+      return map.unproject(L.point(center.x, center.y - 38));
     };
-
-    const handle = L.marker(computeHandleLatLng(), {
+    const handle = L.marker(position(), {
       icon: L.divIcon({
         className: 'rotate-handle',
-        html: `<div class="rotate-handle-inner" style="
-          width: 26px; height: 26px; border-radius: 50%;
-          background: white; border: 2px solid #2563eb;
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-          cursor: grab;
-        "><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-          fill="none" stroke="#2563eb" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"
-          style="pointer-events: none;">
-          <path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/>
-        </svg></div>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 13],
+        html: '<div style="width:26px;height:26px;border-radius:50%;background:white;border:2px solid #2563eb;display:flex;align-items:center;justify-content:center;color:#2563eb;cursor:grab;font-size:22px" title="Rotate polygon">↻</div>',
+        iconSize: [26, 26], iconAnchor: [13, 13],
       }),
-      interactive: true,
-      bubblingMouseEvents: false,
-      keyboard: false,
-      zIndexOffset: 1000,
+      interactive: true, bubblingMouseEvents: false, keyboard: false, zIndexOffset: 1000,
     }).addTo(map);
-
-    const handleEl = handle.getElement() as HTMLElement | null;
-    if (!handleEl) {
-      return () => { map.removeLayer(handle); };
-    }
-    handleEl.style.cursor = 'grab';
-    handleEl.style.pointerEvents = 'auto';
-    L.DomEvent.disableClickPropagation(handleEl);
-    L.DomEvent.disableScrollPropagation(handleEl);
-
-    let moveHandler: ((ev: MouseEvent) => void) | null = null;
-    let upHandler: (() => void) | null = null;
-
-    const onPointerDown = (e: MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      map.dragging.disable();
-      map.boxZoom.disable();
-      handleEl.style.cursor = 'grabbing';
+    const element = handle.getElement();
+    if (!element) return () => { map.removeLayer(handle); };
+    L.DomEvent.disableClickPropagation(element);
+    L.DomEvent.disableScrollPropagation(element);
+    let dragging = false;
+    const detach = attachPointerDrag(element, event => {
+      if (!polygon.polygonId) return;
+      const id = polygon.polygonId;
+      const restore = pauseMapEditing(map);
+      const snapshot = projectedCorners(map, polygon);
+      const center = polygonCenter(map, polygon);
+      const start = map.project(map.mouseEventToLatLng(event));
+      const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+      dragging = true;
+      beginPolygonEdit(id);
       document.body.style.cursor = 'grabbing';
-
-      const centerPt = map.latLngToLayerPoint(polygon.getBounds().getCenter());
-      const startPt = map.mouseEventToLayerPoint(e);
-      const startAngle = Math.atan2(startPt.y - centerPt.y, startPt.x - centerPt.x);
-      const snapshot = ((polygon.getLatLngs()[0] as unknown) as L.LatLng[]).map((ll) => L.latLng(ll.lat, ll.lng));
-      const labelSnapshot = polygon.label?.getLatLng();
-
-      moveHandler = (ev: MouseEvent) => {
-        ev.preventDefault();
-        const p = map.mouseEventToLayerPoint(ev);
-        const nowAngle = Math.atan2(p.y - centerPt.y, p.x - centerPt.x);
-        const delta = nowAngle - startAngle;
-        const rotated = rotateLatLngsAroundCenterPx(map, centerPt, snapshot, delta);
-        polygon.setLatLngs([rotated]);
-
-        if (labelSnapshot && polygon.label) {
-          const [newLabelLatLng] = rotateLatLngsAroundCenterPx(map, centerPt, [labelSnapshot], delta);
-          polygon.label.setLatLng(newLabelLatLng);
-        }
-        handle.setLatLng(computeHandleLatLng());
+      return {
+        move: ev => {
+          const point = map.project(map.mouseEventToLatLng(ev));
+          const angle = Math.atan2(point.y - center.y, point.x - center.x) - startAngle;
+          const corners = rotatePoints(snapshot, center, angle).map(p => map.unproject(L.point(p.x, p.y)));
+          polygon.setLatLngs([corners]);
+          polygon.label?.setLatLng(map.unproject(center));
+          handle.setLatLng(position());
+          polygon.fire('reshape');
+        },
+        finish: () => {
+          dragging = false;
+          document.body.style.cursor = '';
+          restore();
+          try { onCommit(polygon); } finally { finishPolygonEdit(id); }
+        },
       };
-
-      upHandler = () => {
-        if (moveHandler) document.removeEventListener('mousemove', moveHandler);
-        if (upHandler) document.removeEventListener('mouseup', upHandler);
-        document.body.style.cursor = '';
-        handleEl.style.cursor = 'grab';
-        map.dragging.enable();
-        map.boxZoom.enable();
-        const committed = ((polygon.getLatLngs()[0] as unknown) as L.LatLng[]);
-        onCommit(committed);
-        moveHandler = null;
-        upHandler = null;
-      };
-
-      document.addEventListener('mousemove', moveHandler);
-      document.addEventListener('mouseup', upHandler);
-    };
-
-    handleEl.addEventListener('mousedown', onPointerDown);
-
-    const onZoomOrMove = () => {
-      if (!moveHandler) handle.setLatLng(computeHandleLatLng());
-    };
-    map.on('zoomend moveend', onZoomOrMove);
-
-    // Edge-resize fires this on the polygon — keep the rotate handle
-    // anchored to the polygon center as the rectangle stretches.
-    const onPolygonReshape = () => {
-      if (!moveHandler) handle.setLatLng(computeHandleLatLng());
-    };
-    polygon.on('reshape', onPolygonReshape);
-
-    const onDocKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') onDismiss();
-    };
-    document.addEventListener('keydown', onDocKey);
-
+    });
+    map.on('zoomstart movestart', detach.finish);
+    const refresh = () => { if (!dragging) handle.setLatLng(position()); };
+    map.on('zoomend moveend', refresh);
+    polygon.on('reshape', refresh);
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onDismiss(); };
+    document.addEventListener('keydown', onKey);
     return () => {
-      handleEl.removeEventListener('mousedown', onPointerDown);
-      if (moveHandler) document.removeEventListener('mousemove', moveHandler);
-      if (upHandler) document.removeEventListener('mouseup', upHandler);
+      detach();
+      map.off('zoomstart movestart', detach.finish);
+      map.off('zoomend moveend', refresh);
+      polygon.off('reshape', refresh);
+      document.removeEventListener('keydown', onKey);
       map.removeLayer(handle);
-      map.off('zoomend moveend', onZoomOrMove);
-      polygon.off('reshape', onPolygonReshape);
-      document.removeEventListener('keydown', onDocKey);
-      document.body.style.cursor = '';
     };
-  }, [map, polygon, onCommit, onDismiss]);
-
+  }, [map, polygon, onCommit, onDismiss, beginPolygonEdit, finishPolygonEdit]);
   return null;
 }
 
-/**
- * Select-first edge resize. Each of the rectangle's four edges is a wide,
- * transparent polyline "hit zone" that picks up clicks on the edge line.
- * Clicking an edge selects it — we draw a visible blue highlight on top
- * and a draggable grip at its midpoint. Dragging the grip moves both
- * corners of that edge along its outward normal (only that side stretches,
- * rotation is preserved). Clicking another edge switches selection;
- * Escape clears it.
- */
-function EdgeResizeHandles({
-  map,
-  polygon,
-  onCommit,
-}: {
-  map: L.Map;
-  polygon: DrawnLayer;
-  onCommit: (corners: L.LatLng[]) => void;
+function EdgeResizeHandles({ map, polygon, onCommit }: {
+  map: L.Map; polygon: DrawnLayer; onCommit: (polygon: DrawnLayer) => void;
 }) {
   const [selectedEdge, setSelectedEdge] = React.useState<number | null>(null);
-
-  // Reset selection whenever the polygon changes.
+  const { beginPolygonEdit, finishPolygonEdit } = usePolygons();
   React.useEffect(() => {
-    setSelectedEdge(null);
-  }, [polygon]);
-
-  const cornersLL = React.useCallback(
-    (): L.LatLng[] => (polygon.getLatLngs()[0] as unknown) as L.LatLng[],
-    [polygon],
-  );
-
-  // Transparent wide polyline per edge — the click target.
-  React.useEffect(() => {
-    const hitZones: L.Polyline[] = [];
-
-    const buildZones = () => {
-      const corners = cornersLL();
-      for (let i = 0; i < 4; i++) {
-        const a = corners[i];
-        const b = corners[(i + 1) % 4];
-        const zone = L.polyline([a, b], {
-          color: '#2563eb',
-          opacity: 0,
-          weight: 18,
-          interactive: true,
-          bubblingMouseEvents: false,
-        }).addTo(map);
-        const el = (zone as unknown as { getElement?: () => SVGElement | null })
-          .getElement?.();
-        if (el) {
-          (el as SVGElement & { style: CSSStyleDeclaration }).style.cursor = 'pointer';
-        }
-        zone.on('click', (evt: L.LeafletMouseEvent) => {
-          L.DomEvent.stopPropagation(evt.originalEvent);
-          setSelectedEdge(i);
-        });
-        hitZones.push(zone);
-      }
-    };
-
-    const refreshZones = () => {
-      const corners = cornersLL();
-      hitZones.forEach((z, i) => {
-        z.setLatLngs([corners[i], corners[(i + 1) % 4]]);
+    const zones = Array.from({ length: 4 }, (_, i) => {
+      const corners = polygon.getLatLngs()[0] as L.LatLng[];
+      const zone = L.polyline([corners[i], corners[(i + 1) % 4]], {
+        opacity: 0, weight: 18, interactive: true, bubblingMouseEvents: false,
+      }).addTo(map);
+      zone.on('click', (event: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(event.originalEvent);
+        setSelectedEdge(i);
       });
+      return zone;
+    });
+    const refresh = () => {
+      const corners = polygon.getLatLngs()[0] as L.LatLng[];
+      zones.forEach((zone, i) => zone.setLatLngs([corners[i], corners[(i + 1) % 4]]));
     };
-
-    buildZones();
-    polygon.on('reshape', refreshZones);
-
+    polygon.on('reshape', refresh);
     return () => {
-      polygon.off('reshape', refreshZones);
-      hitZones.forEach((z) => map.removeLayer(z));
+      polygon.off('reshape', refresh);
+      zones.forEach(zone => map.removeLayer(zone));
     };
-  }, [map, polygon, cornersLL]);
+  }, [map, polygon]);
 
-  // Highlight + draggable grip for the currently selected edge.
   React.useEffect(() => {
     if (selectedEdge === null) return;
-
-    const edgeIndex = selectedEdge;
-    const cornersPx = (): L.Point[] =>
-      cornersLL().map((ll) => map.latLngToLayerPoint(ll));
-
-    const midLatLng = (a: L.Point, b: L.Point): L.LatLng =>
-      map.layerPointToLatLng(L.point((a.x + b.x) / 2, (a.y + b.y) / 2));
-
-    const cursorForEdge = (a: L.Point, b: L.Point): string => {
-      const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-      const d = ((angle % 180) + 180) % 180;
-      if (d < 22.5 || d >= 157.5) return 'ns-resize';
-      if (d < 67.5) return 'nesw-resize';
-      if (d < 112.5) return 'ew-resize';
-      return 'nwse-resize';
+    const corners = polygon.getLatLngs()[0] as L.LatLng[];
+    const i = selectedEdge, j = (i + 1) % 4;
+    const highlight = L.polyline([corners[i], corners[j]], {
+      color: '#2563eb', weight: 4, interactive: false,
+    }).addTo(map);
+    const midpoint = () => {
+      const points = projectedCorners(map, polygon);
+      return map.unproject(L.point((points[i].x + points[j].x) / 2, (points[i].y + points[j].y) / 2));
     };
-
-    const corners = cornersLL();
-    const highlight = L.polyline(
-      [corners[edgeIndex], corners[(edgeIndex + 1) % 4]],
-      { color: '#2563eb', weight: 4, opacity: 0.95, interactive: false },
-    ).addTo(map);
-
-    const ptsAtStart = cornersPx();
-    const grip = L.marker(
-      midLatLng(ptsAtStart[edgeIndex], ptsAtStart[(edgeIndex + 1) % 4]),
-      {
-        icon: L.divIcon({
-          className: 'edge-resize-grip',
-          html: `<div style="
-            width: 14px; height: 14px;
-            background: #2563eb; border: 2px solid white;
-            border-radius: 3px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-          "></div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7],
-        }),
-        interactive: true,
-        bubblingMouseEvents: false,
-        keyboard: false,
-        zIndexOffset: 1100,
-      },
-    ).addTo(map);
-
-    const gripEl = grip.getElement() as HTMLElement | null;
-    let moveHandler: ((ev: MouseEvent) => void) | null = null;
-    let upHandler: (() => void) | null = null;
-
-    const repositionOverlay = () => {
-      const llCurrent = cornersLL();
-      highlight.setLatLngs([llCurrent[edgeIndex], llCurrent[(edgeIndex + 1) % 4]]);
-      const pts = cornersPx();
-      grip.setLatLng(midLatLng(pts[edgeIndex], pts[(edgeIndex + 1) % 4]));
-      if (gripEl) gripEl.style.cursor = cursorForEdge(pts[edgeIndex], pts[(edgeIndex + 1) % 4]);
+    const grip = L.marker(midpoint(), {
+      icon: L.divIcon({
+        className: 'edge-resize-grip',
+        html: '<div style="width:14px;height:14px;background:#2563eb;border:2px solid white;border-radius:3px;cursor:move" title="Resize polygon edge"></div>',
+        iconSize: [14, 14], iconAnchor: [7, 7],
+      }),
+      interactive: true, bubblingMouseEvents: false, keyboard: false, zIndexOffset: 1100,
+    }).addTo(map);
+    const refresh = () => {
+      const current = polygon.getLatLngs()[0] as L.LatLng[];
+      highlight.setLatLngs([current[i], current[j]]);
+      grip.setLatLng(midpoint());
     };
-
-    if (gripEl) {
-      gripEl.style.pointerEvents = 'auto';
-      gripEl.style.cursor = cursorForEdge(
-        ptsAtStart[edgeIndex],
-        ptsAtStart[(edgeIndex + 1) % 4],
-      );
-      L.DomEvent.disableClickPropagation(gripEl);
-      L.DomEvent.disableScrollPropagation(gripEl);
-
-      const pointerDown = (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        map.dragging.disable();
-        map.boxZoom.disable();
-        document.body.style.cursor = gripEl.style.cursor;
-
-        const startPt = map.mouseEventToLayerPoint(e);
-        const snapshotLL = cornersLL().map((ll) => L.latLng(ll.lat, ll.lng));
-        const snapshotPts = snapshotLL.map((ll) => map.latLngToLayerPoint(ll));
-        const labelSnapshot = polygon.label?.getLatLng();
-
-        const i0 = edgeIndex;
-        const i1 = (edgeIndex + 1) % 4;
-        const ex = snapshotPts[i1].x - snapshotPts[i0].x;
-        const ey = snapshotPts[i1].y - snapshotPts[i0].y;
-        const len = Math.hypot(ex, ey) || 1;
-        const nx = -ey / len;
-        const ny = ex / len;
-
-        moveHandler = (ev: MouseEvent) => {
-          ev.preventDefault();
-          const p = map.mouseEventToLayerPoint(ev);
-          const proj = (p.x - startPt.x) * nx + (p.y - startPt.y) * ny;
-          const tx = proj * nx;
-          const ty = proj * ny;
-
-          const newPts = snapshotPts.map((pt, idx) =>
-            idx === i0 || idx === i1 ? L.point(pt.x + tx, pt.y + ty) : pt,
-          );
-          const newCorners = newPts.map((pt) => map.layerPointToLatLng(pt));
-          polygon.setLatLngs([newCorners]);
-
-          if (labelSnapshot && polygon.label) {
-            const labelPt = map.latLngToLayerPoint(labelSnapshot);
-            polygon.label.setLatLng(
-              map.layerPointToLatLng(L.point(labelPt.x + tx / 2, labelPt.y + ty / 2)),
-            );
-          }
-
-          highlight.setLatLngs([newCorners[i0], newCorners[i1]]);
-          grip.setLatLng(midLatLng(newPts[i0], newPts[i1]));
+    const element = grip.getElement();
+    const detach = element ? attachPointerDrag(element, event => {
+      if (!polygon.polygonId) return;
+      const id = polygon.polygonId;
+      const restore = pauseMapEditing(map);
+      const snapshot = projectedCorners(map, polygon);
+      const start = map.project(map.mouseEventToLatLng(event));
+      beginPolygonEdit(id);
+      return {
+        move: ev => {
+          const point = map.project(map.mouseEventToLatLng(ev));
+          const points = resizeEdge(snapshot, i, { x: point.x - start.x, y: point.y - start.y });
+          polygon.setLatLngs([points.map(p => map.unproject(L.point(p.x, p.y)))]);
+          polygon.label?.setLatLng(map.unproject(polygonCenter(map, polygon)));
           polygon.fire('reshape');
-        };
-
-        upHandler = () => {
-          if (moveHandler) document.removeEventListener('mousemove', moveHandler);
-          if (upHandler) document.removeEventListener('mouseup', upHandler);
-          document.body.style.cursor = '';
-          map.dragging.enable();
-          map.boxZoom.enable();
-          onCommit(cornersLL());
-          moveHandler = null;
-          upHandler = null;
-        };
-
-        document.addEventListener('mousemove', moveHandler);
-        document.addEventListener('mouseup', upHandler);
+        },
+        finish: () => {
+          restore();
+          try { onCommit(polygon); } finally { finishPolygonEdit(id); }
+        },
       };
-
-      gripEl.addEventListener('mousedown', pointerDown);
-
-      const onZoomOrMove = () => {
-        if (!moveHandler) repositionOverlay();
-      };
-      map.on('zoomend moveend', onZoomOrMove);
-
-      const onReshape = () => {
-        if (!moveHandler) repositionOverlay();
-      };
-      polygon.on('reshape', onReshape);
-
-      const onKey = (ev: KeyboardEvent) => {
-        if (ev.key === 'Escape') setSelectedEdge(null);
-      };
-      document.addEventListener('keydown', onKey);
-
-      return () => {
-        gripEl.removeEventListener('mousedown', pointerDown);
-        if (moveHandler) document.removeEventListener('mousemove', moveHandler);
-        if (upHandler) document.removeEventListener('mouseup', upHandler);
-        map.off('zoomend moveend', onZoomOrMove);
-        polygon.off('reshape', onReshape);
-        document.removeEventListener('keydown', onKey);
-        map.removeLayer(highlight);
-        map.removeLayer(grip);
-        document.body.style.cursor = '';
-      };
+    }) : Object.assign(() => {}, { finish: () => {} });
+    map.on('zoomstart movestart', detach.finish);
+    if (element) {
+      L.DomEvent.disableClickPropagation(element);
+      L.DomEvent.disableScrollPropagation(element);
     }
-
+    polygon.on('reshape', refresh);
+    map.on('zoomend moveend', refresh);
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setSelectedEdge(null); };
+    document.addEventListener('keydown', onKey);
     return () => {
+      detach();
+      map.off('zoomstart movestart', detach.finish);
+      polygon.off('reshape', refresh);
+      map.off('zoomend moveend', refresh);
+      document.removeEventListener('keydown', onKey);
       map.removeLayer(highlight);
       map.removeLayer(grip);
     };
-  }, [map, polygon, onCommit, selectedEdge, cornersLL]);
+  }, [map, polygon, onCommit, selectedEdge, beginPolygonEdit, finishPolygonEdit]);
+  return null;
+}
 
+function SamplingPreview({ map, polygon, direction, edge }: {
+  map: L.Map; polygon: DrawnLayer; direction: 'horizontal' | 'vertical'; edge: number;
+}) {
+  React.useEffect(() => {
+    const layer = L.layerGroup().addTo(map);
+    const colors = { across: '#fbbf24', along: '#22d3ee' };
+    const guides = Object.fromEntries(Object.entries(colors).map(([kind, color]) => [kind,
+      Array.from({ length: 4 }, () => L.polyline([], {
+        color, weight: 1.5, dashArray: '5 5', interactive: false,
+      }).addTo(layer)),
+    ]));
+    const refresh = () => {
+      const lines = samplingPreview(projectedCorners(map, polygon), edge, direction);
+      for (const kind of ['across', 'along'] as const) {
+        lines[kind].forEach((points, i) => guides[kind][i].setLatLngs(
+          points.map(p => map.unproject(L.point(p.x, p.y))),
+        ));
+      }
+    };
+    refresh();
+    polygon.on('reshape', refresh);
+    map.on('zoomend', refresh);
+    return () => {
+      polygon.off('reshape', refresh);
+      map.off('zoomend', refresh);
+      map.removeLayer(layer);
+    };
+  }, [map, polygon, direction, edge]);
   return null;
 }
 
@@ -804,43 +626,43 @@ export default function Map() {
   const [mode, setMode] = React.useState<Mode>("pan");
   const [showSatellite, setShowSatellite] = React.useState(false);
   const [polygons, setPolygons] = React.useState<DrawnLayer[]>([]);
-  const [selectedPolygon, setSelectedPolygon] = React.useState<DrawnLayer | null>(null);
+  const [dismissedPolygonId, setDismissedPolygonId] = React.useState<string | null>(null);
   const [mapInstance, setMapInstance] = React.useState<L.Map | null>(null);
-  const { addPolygon, updatePolygon, clearPolygons: clearPolygonsContext, polygons: savedPolygons } = usePolygons();
+  const { addPolygon, updatePolygonGeometry, clearPolygons: clearPolygonsContext,
+    polygons: savedPolygons, selectedPolygonId, setSelectedPolygonId } = usePolygons();
+  const activePolygon = polygons.find(p => p.polygonId === selectedPolygonId);
+  const selectedPolygon = selectedPolygonId === dismissedPolygonId ? null : activePolygon;
+  const selectedSettings = savedPolygons.find(p => p.id === selectedPolygonId);
   const center: [number, number] = [41.878, -93.097];
 
-  // Click on the map outside any polygon → deselect
+  // Hide editing handles without losing the shared analysis selection/settings.
   React.useEffect(() => {
     if (!mapInstance) return;
-    const handler = () => setSelectedPolygon(null);
+    const handler = () => setDismissedPolygonId(selectedPolygonId);
     mapInstance.on('click', handler);
     return () => {
       mapInstance.off('click', handler);
     };
-  }, [mapInstance]);
+  }, [mapInstance, selectedPolygonId]);
 
-  const handleRotationDismiss = React.useCallback(() => setSelectedPolygon(null), []);
+  const handleRotationDismiss = React.useCallback(() => setDismissedPolygonId(selectedPolygonId), [selectedPolygonId]);
 
-  const handleRotationCommit = React.useCallback((corners: L.LatLng[]) => {
-    if (!selectedPolygon?.polygonId) return;
-    const coordinates = corners.map((ll) => [ll.lng, ll.lat]);
+  const handleRotationCommit = React.useCallback((polygon: DrawnLayer) => {
+    if (!polygon.polygonId) return;
+    const coordinates = (polygon.getLatLngs()[0] as L.LatLng[]).map(ll => [ll.lng, ll.lat]);
     coordinates.push([...coordinates[0]]);
-    const previous = savedPolygons.find(p => p.id === selectedPolygon.polygonId);
-    const geoJSON = { ...previous?.geoJSON, type: "Polygon" as const, coordinates: [coordinates] };
-    const b = selectedPolygon.getBounds();
-    const bounds: [[number, number], [number, number]] = [
-      [b.getSouth(), b.getWest()],
-      [b.getNorth(), b.getEast()],
-    ];
-    updatePolygon(selectedPolygon.polygonId, { geoJSON, bounds });
-  }, [selectedPolygon, updatePolygon, savedPolygons]);
+    const b = polygon.getBounds();
+    updatePolygonGeometry(polygon.polygonId, [coordinates], [
+      [b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()],
+    ]);
+  }, [updatePolygonGeometry]);
 
   const handlePolygonComplete = React.useCallback((polygon: L.Polygon) => {
     if (mapInstance) {
       polygon.addTo(mapInstance);
       const tagged = polygon as DrawnLayer;
-      setPolygons(prev => [...prev, tagged]);
       setMode("pan");
+      setDismissedPolygonId(null);
 
       // Convert Leaflet polygon to GeoJSON and save to context
       const latLngs = polygon.getLatLngs()[0] as L.LatLng[];
@@ -876,6 +698,7 @@ export default function Map() {
         bounds: polygonBounds,
       });
       tagged.polygonId = saved.id;
+      setPolygons(prev => [...prev, tagged]);
 
       // Add label to polygon center
       const labelCenter = polygon.getBounds().getCenter();
@@ -905,10 +728,11 @@ export default function Map() {
       // Clicking the polygon selects it for rotation
       tagged.on('click', (evt: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(evt.originalEvent);
-        setSelectedPolygon(tagged);
+        if (tagged.polygonId) setSelectedPolygonId(tagged.polygonId);
+        setDismissedPolygonId(null);
       });
     }
-  }, [mapInstance, addPolygon, savedPolygons.length]);
+  }, [mapInstance, addPolygon, savedPolygons.length, setSelectedPolygonId]);
 
   const handleClearPolygons = React.useCallback(() => {
     if (mapInstance) {
@@ -922,15 +746,15 @@ export default function Map() {
         }
       });
       setPolygons([]);
-      setSelectedPolygon(null);
+      setDismissedPolygonId(null);
       clearPolygonsContext();
     }
   }, [mapInstance, polygons, clearPolygonsContext]);
 
   // Don't keep a selection active while the user is drawing a new rectangle
   React.useEffect(() => {
-    if (mode === "draw") setSelectedPolygon(null);
-  }, [mode]);
+    if (mode === "draw") setDismissedPolygonId(selectedPolygonId);
+  }, [mode, selectedPolygonId]);
 
   return (
     <div className="relative h-screen w-full overflow-hidden rounded-xl z-0">
@@ -976,9 +800,14 @@ export default function Map() {
         <DrawPolygonControl mode={mode} setMode={setMode} />
         <ClearPolygonsControl onClear={handleClearPolygons} />
         <PolygonDrawing mode={mode} onPolygonComplete={handlePolygonComplete} />
+        {mapInstance && activePolygon && selectedSettings && (
+          <SamplingPreview map={mapInstance} polygon={activePolygon}
+            direction={selectedSettings.roadDirection} edge={selectedSettings.geoJSON.horizontal_edge_index ?? 1} />
+        )}
         {mapInstance && selectedPolygon && (
           <>
             <EdgeResizeHandles
+              key={selectedPolygon.polygonId}
               map={mapInstance}
               polygon={selectedPolygon}
               onCommit={handleRotationCommit}
@@ -992,6 +821,14 @@ export default function Map() {
           </>
         )}
       </MapContainer>
+      {selectedSettings && (
+        <div className="absolute bottom-8 left-12 z-[500] pointer-events-none rounded bg-slate-900/90 px-3 py-2 text-xs text-white">
+          <div>{selectedSettings.name} · {selectedSettings.roadDirection === 'vertical' ? 'Vertical' : 'Horizontal'} road</div>
+          <div className="text-amber-300">Dashed amber: rut / crown sampling</div>
+          <div className="text-cyan-300">Dashed cyan: corrugation sampling</div>
+          <div className="text-slate-300">Direction preview only; run analysis for results.</div>
+        </div>
+      )}
     </div>
   );
 }

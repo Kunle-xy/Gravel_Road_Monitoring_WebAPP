@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import { polygonSelectionKey } from "../../lib/polygonStore";
 import RoadDirectionControl from "../RoadDirectionControl";
 import { usePolygons } from "@/app/contexts/PolygonContext";
 import { useMap } from "@/app/contexts/MapContext";
@@ -122,8 +123,7 @@ export default function RutForm() {
   const [loadingFiles, setLoadingFiles] = useState(true);
 
   // Polygon selection from context
-  const { polygons } = usePolygons();
-  const [selectedPolygonId, setSelectedPolygonId] = useState<string>("");
+  const { polygons, selectedPolygonId, setSelectedPolygonId, editingPolygonId, getAnalysisSelection, isAnalysisSelectionCurrent } = usePolygons();
 
   // Analysis parameters
   const [sampling, setSampling] = useState(20);
@@ -138,6 +138,10 @@ export default function RutForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisResults | null>(null);
+  const [submittedSelectionKey, setSubmittedSelectionKey] = useState<string | null>(null);
+  const selectionKey = polygonSelectionKey(polygons.find(p => p.id === selectedPolygonId), selectedDemId);
+  const resultsStale = submittedSelectionKey !== null && (submittedSelectionKey !== selectionKey || editingPolygonId === selectedPolygonId);
+  const overlayGeneration = useRef(0);
 
   // Map overlay (detected ruts as colored line features)
   const { map } = useMap();
@@ -157,6 +161,7 @@ export default function RutForm() {
   };
 
   const clearRutOverlay = React.useCallback(() => {
+    overlayGeneration.current += 1;
     if (overlayLayerRef.current && map) {
       map.removeLayer(overlayLayerRef.current);
     }
@@ -164,6 +169,8 @@ export default function RutForm() {
   }, [map]);
 
   const handleToggleOverlay = async () => {
+    if (!isAnalysisSelectionCurrent(submittedSelectionKey, selectedDemId)) { showToast("Polygon or direction changed. Run analysis again.", "info"); return; }
+    const generation = overlayGeneration.current;
     if (overlayOn) {
       clearRutOverlay();
       setOverlayOn(false);
@@ -183,6 +190,7 @@ export default function RutForm() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const gj = await res.json();
       const L = (await import("leaflet")).default;
+      if (generation !== overlayGeneration.current || !isAnalysisSelectionCurrent(submittedSelectionKey, selectedDemId)) return;
       const layer = L.geoJSON(gj, {
         style: (feature) => {
           const sev = feature?.properties?.severity as string | undefined;
@@ -231,7 +239,7 @@ export default function RutForm() {
   useEffect(() => {
     clearRutOverlay();
     setOverlayOn(false);
-  }, [jobId, clearRutOverlay]);
+  }, [jobId, selectionKey, editingPolygonId, clearRutOverlay]);
 
   // Fetch user's DEM files on mount
   useEffect(() => {
@@ -271,15 +279,18 @@ export default function RutForm() {
   // Poll for job status
   useEffect(() => {
     if (!jobId || !isAnalyzing) return;
+    let active = true;
 
     const pollInterval = setInterval(async () => {
       try {
         const response = await fetchWithAuth(`${API_ENDPOINTS.RUT.BASE}/${jobId}/status`);
         if (response.ok) {
           const data: AnalysisResults = await response.json();
+          if (!active) return;
           setResults(data);
 
           if (data.status === "completed") {
+            active = false;
             setIsAnalyzing(false);
             showToast(
               `Analysis complete! Detected ${data.total_ruts_detected} ruts.`,
@@ -287,6 +298,7 @@ export default function RutForm() {
             );
             clearInterval(pollInterval);
           } else if (data.status === "failed") {
+            active = false;
             setIsAnalyzing(false);
             showToast(data.error_message || "Analysis failed", "error");
             clearInterval(pollInterval);
@@ -297,7 +309,7 @@ export default function RutForm() {
       }
     }, 2000);
 
-    return () => clearInterval(pollInterval);
+    return () => { active = false; clearInterval(pollInterval); };
   }, [jobId, isAnalyzing]);
 
   const validateForm = (): boolean => {
@@ -386,21 +398,16 @@ export default function RutForm() {
     setJobId(null);
 
     try {
-      // Get polygon from context
-      const selectedPolygon = polygons.find(p => p.id === selectedPolygonId);
-      if (!selectedPolygon) {
-        throw new Error("Selected polygon not found");
-      }
-
-      const polygon = selectedPolygon.geoJSON;
+      const selection = getAnalysisSelection(selectedDemId);
+      setSubmittedSelectionKey(selection.key);
 
       // Create analysis job
       const response = await fetchWithAuth(API_ENDPOINTS.RUT.BASE, {
         method: "POST",
         body: JSON.stringify({
           tiff_file_id: selectedDemId,
-          road_direction: polygons.find(p => p.id === selectedPolygonId)?.roadDirection ?? "horizontal",
-          polygon_geojson: polygon,
+          road_direction: selection.road_direction,
+          polygon_geojson: selection.polygon_geojson,
           dy_freq: sampling,
           dx: ruttingWidth,
           apply_smoothing: gaussian,
@@ -502,6 +509,11 @@ export default function RutForm() {
         />
 
         <RoadDirectionControl polygonId={selectedPolygonId} />
+        {resultsStale && (
+          <p role="status" className="my-2 rounded border border-amber-600/50 bg-amber-900/20 p-2 text-xs text-amber-300">
+            Polygon or road direction changed. Results below belong to the previous settings. Run analysis again to update them.
+          </p>
+        )}
 
         {/* Parameters */}
         <div className="border-t border-slate-700 pt-2 mt-2">
@@ -658,7 +670,7 @@ export default function RutForm() {
                   <button
                     type="button"
                     onClick={handleToggleOverlay}
-                    disabled={overlayLoading}
+                    disabled={overlayLoading || resultsStale}
                     className={`flex items-center justify-center gap-1.5 flex-1 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors shadow-lg ${
                       overlayOn
                         ? "bg-emerald-600 text-white hover:bg-emerald-700"
@@ -708,14 +720,14 @@ export default function RutForm() {
           <button
             onClick={handleRunAnalysis}
             disabled={
-              isAnalyzing ||
+              isAnalyzing || editingPolygonId !== null ||
               loadingFiles ||
               demFiles.length === 0 ||
               polygons.length === 0 ||
               !selectedPolygonId
             }
             className={`font-bold py-2.5 px-4 rounded-lg text-[13px] mx-auto block transition-all shadow-lg ${
-              isAnalyzing ||
+              isAnalyzing || editingPolygonId !== null ||
               loadingFiles ||
               demFiles.length === 0 ||
               polygons.length === 0 ||

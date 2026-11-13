@@ -4,10 +4,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { CheckSquare, Square, AlertCircle, Loader2, ExternalLink, Eye, EyeOff } from "lucide-react";
 import type { GeoJSON as LeafletGeoJSON } from "leaflet";
 import { fetchWithAuth, API_ENDPOINTS } from "@/app/lib/api";
+import { polygonSelectionKey } from "../../lib/polygonStore";
 import RoadDirectionControl from "../RoadDirectionControl";
 import { usePolygons } from "@/app/contexts/PolygonContext";
 import { useMap } from "@/app/contexts/MapContext";
-import html2canvas from "html2canvas-pro";
 
 const SEVERITY_COLORS: Record<string, string> = {
   LOW: "#16a34a",
@@ -71,8 +71,7 @@ export default function CorrugationForm() {
   const [demFiles, setDemFiles] = useState<DemFile[]>([]);
   const [selectedDemId, setSelectedDemId] = useState("");
   const [loadingFiles, setLoadingFiles] = useState(true);
-  const { polygons } = usePolygons();
-  const [selectedPolygonId, setSelectedPolygonId] = useState("");
+  const { polygons, selectedPolygonId, setSelectedPolygonId, editingPolygonId, getAnalysisSelection, isAnalysisSelectionCurrent } = usePolygons();
 
   const [sampling, setSampling] = useState(20);
   const [lineInterval, setLineInterval] = useState(0.05);
@@ -89,6 +88,10 @@ export default function CorrugationForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalysisResults | null>(null);
+  const [submittedSelectionKey, setSubmittedSelectionKey] = useState<string | null>(null);
+  const selectionKey = polygonSelectionKey(polygons.find(p => p.id === selectedPolygonId), selectedDemId);
+  const resultsStale = submittedSelectionKey !== null && (submittedSelectionKey !== selectionKey || editingPolygonId === selectedPolygonId);
+  const overlayGeneration = useRef(0);
 
   // Map overlay of detected corrugation segments
   const { map } = useMap();
@@ -99,6 +102,7 @@ export default function CorrugationForm() {
   const inputBox = "w-28 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-center text-[12px] text-slate-100 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400";
 
   const clearCorrugationOverlay = React.useCallback(() => {
+    overlayGeneration.current += 1;
     if (overlayLayerRef.current && map) {
       map.removeLayer(overlayLayerRef.current);
     }
@@ -106,6 +110,8 @@ export default function CorrugationForm() {
   }, [map]);
 
   const handleToggleOverlay = async () => {
+    if (!isAnalysisSelectionCurrent(submittedSelectionKey, selectedDemId)) { showToast("Polygon or direction changed. Run analysis again.", "info"); return; }
+    const generation = overlayGeneration.current;
     if (overlayOn) {
       clearCorrugationOverlay();
       setOverlayOn(false);
@@ -125,6 +131,7 @@ export default function CorrugationForm() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const gj = await res.json();
       const L = (await import("leaflet")).default;
+      if (generation !== overlayGeneration.current || !isAnalysisSelectionCurrent(submittedSelectionKey, selectedDemId)) return;
       const layer = L.geoJSON(gj, {
         style: (feature) => {
           const sev = feature?.properties?.severity as string | undefined;
@@ -173,7 +180,7 @@ export default function CorrugationForm() {
   useEffect(() => {
     clearCorrugationOverlay();
     setOverlayOn(false);
-  }, [jobId, clearCorrugationOverlay]);
+  }, [jobId, selectionKey, editingPolygonId, clearCorrugationOverlay]);
 
   // Prefill wavelength bounds from DEM resolution + sampling frequency. Skip
   // once the user has touched either input — their edits take precedence.
@@ -223,17 +230,21 @@ export default function CorrugationForm() {
 
   useEffect(() => {
     if (!jobId || !isAnalyzing) return;
+    let active = true;
     const poll = setInterval(async () => {
       try {
         const res = await fetchWithAuth(`${API_ENDPOINTS.CORRUGATION.BASE}/${jobId}/status`);
         if (res.ok) {
           const data: AnalysisResults = await res.json();
+          if (!active) return;
           setResults(data);
           if (data.status === "completed") {
+            active = false;
             setIsAnalyzing(false);
             showToast(`Complete! Total area: ${data.total_area_ft2.toFixed(1)} ft2`, "success");
             clearInterval(poll);
           } else if (data.status === "failed") {
+            active = false;
             setIsAnalyzing(false);
             showToast(data.error_message || "Analysis failed", "error");
             clearInterval(poll);
@@ -241,7 +252,7 @@ export default function CorrugationForm() {
         }
       } catch (e) { console.error("Poll error:", e); }
     }, 2000);
-    return () => clearInterval(poll);
+    return () => { active = false; clearInterval(poll); };
   }, [jobId, isAnalyzing]);
 
   const handleRun = async () => {
@@ -258,25 +269,21 @@ export default function CorrugationForm() {
     setIsAnalyzing(true); setResults(null); setJobId(null);
 
     try {
-      let screenshot: string | null = null;
-      try {
-        const canvas = await html2canvas(document.body, { allowTaint: true, useCORS: true, scale: 1 });
-        screenshot = canvas.toDataURL("image/png").split(",")[1];
-      } catch { /* ok */ }
+      const selection = getAnalysisSelection(selectedDemId);
+      setSubmittedSelectionKey(selection.key);
 
       const res = await fetchWithAuth(API_ENDPOINTS.CORRUGATION.BASE, {
         method: "POST",
         body: JSON.stringify({
           tiff_file_id: selectedDemId,
-          road_direction: polygons.find(p => p.id === selectedPolygonId)?.roadDirection ?? "horizontal",
-          polygon_geojson: polygon.geoJSON,
+          road_direction: selection.road_direction,
+          polygon_geojson: selection.polygon_geojson,
           dy_freq: sampling,
           line_interval: lineInterval,
           sigma_samples: sigma,
           min_drop_in: minDropIn,
           min_wavelength_m: minWavelengthM,
           max_wavelength_m: maxWavelengthM,
-          screenshot_base64: screenshot,
         }),
       });
 
@@ -329,6 +336,11 @@ export default function CorrugationForm() {
         } />
 
         <RoadDirectionControl polygonId={selectedPolygonId} />
+        {resultsStale && (
+          <p role="status" className="my-2 rounded border border-amber-600/50 bg-amber-900/20 p-2 text-xs text-amber-300">
+            Polygon or road direction changed. Results below belong to the previous settings. Run analysis again to update them.
+          </p>
+        )}
 
         <div className="border-t border-slate-700 pt-2 mt-2">
           <RowGrid label="Sampling frequency per 100 pixels" control={
@@ -405,7 +417,7 @@ export default function CorrugationForm() {
                   <button
                     type="button"
                     onClick={handleToggleOverlay}
-                    disabled={overlayLoading}
+                    disabled={overlayLoading || resultsStale}
                     className={`flex items-center justify-center gap-1.5 flex-1 px-3 py-2 rounded-lg text-[12px] font-medium transition-colors shadow-lg ${
                       overlayOn
                         ? "bg-emerald-600 text-white hover:bg-emerald-700"
@@ -448,9 +460,9 @@ export default function CorrugationForm() {
 
         <div className="pt-3 mt-3 border-t border-slate-700">
           <button onClick={handleRun}
-            disabled={isAnalyzing || loadingFiles || !demFiles.length || !polygons.length || !selectedPolygonId}
+            disabled={isAnalyzing || editingPolygonId !== null || loadingFiles || !demFiles.length || !polygons.length || !selectedPolygonId}
             className={`font-bold py-2.5 px-4 rounded-lg text-[13px] mx-auto block transition-all shadow-lg ${
-              isAnalyzing || loadingFiles || !demFiles.length || !polygons.length || !selectedPolygonId
+              isAnalyzing || editingPolygonId !== null || loadingFiles || !demFiles.length || !polygons.length || !selectedPolygonId
                 ? "bg-slate-700 text-slate-500 cursor-not-allowed"
                 : "bg-red-700 text-white hover:bg-red-800 hover:shadow-xl"
             }`}>

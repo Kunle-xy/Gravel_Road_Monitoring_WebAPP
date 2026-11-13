@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:polygons": "node tests/run-polygon-tests.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
