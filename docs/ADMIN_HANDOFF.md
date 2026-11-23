@@ -545,40 +545,12 @@ Create the file in **`FastAPI/`**, where Pydantic and the services expect it:
 ```bash
 cd /home/graveladmin/GravelRoad_Iowa/FastAPI
 umask 077
-touch .env
+cp -n .env.example .env
 chmod 600 .env
 nano .env
 ```
 
-Paste and replace all `REPLACE_...` and example resource values:
-
-```dotenv
-DATABASE_URL=postgresql://gravel_app:REPLACE_DB_HEX_PASSWORD@127.0.0.1:5432/gravel_road_app
-
-SECRET_KEY=REPLACE_WITH_A_NEW_RANDOM_SIGNING_SECRET
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-REFRESH_TOKEN_EXPIRE_DAYS=7
-
-AWS_ACCESS_KEY_ID=REPLACE_AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY=REPLACE_AWS_SECRET_ACCESS_KEY
-AWS_REGION=us-east-2
-S3_BUCKET_RAW=replace-with-your-raw-bucket
-S3_BUCKET_NAME=replace-with-your-assets-bucket
-AWS_CLOUDFRONT_DOMAIN=dexample123.cloudfront.net
-
-FRONTEND_URL=https://roads.example.org
-
-REDIS_PASSWORD=REPLACE_REDIS_HEX_PASSWORD
-CELERY_BROKER_URL=redis://:REPLACE_REDIS_HEX_PASSWORD@127.0.0.1:6379/0
-CELERY_RESULT_BACKEND=redis://:REPLACE_REDIS_HEX_PASSWORD@127.0.0.1:6379/1
-
-EMAIL_PROVIDER=console
-SES_FROM_EMAIL=
-RESEND_API_KEY=
-RESEND_FROM_EMAIL="Gravel Road Iowa <onboarding@resend.dev>"
-EMAIL_VERIFY_EXPIRE_HOURS=24
-```
+Replace all `REPLACE_...` and example resource values in `.env`.
 
 Generate a signing secret locally, then paste it into `.env`:
 

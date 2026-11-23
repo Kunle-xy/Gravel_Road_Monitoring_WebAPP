@@ -8,6 +8,7 @@
 .env.development
 .env.test
 .env.production
+!/.env.example
 
 # Credentials
 credentials.json
