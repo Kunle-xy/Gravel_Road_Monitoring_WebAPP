@@ -9,7 +9,7 @@
 - [ ] GitHub repository and deployment branch or commit.
 - [ ] Server SSH and sudo, plus ownership of the Vercel project, Cloudflare zone and tunnel, and AWS resources.
 - [ ] Backend environment values through the organization’s secret store and frontend settings in Vercel.
-- [ ] PostgreSQL backup, both S3 buckets, and the two dust model files with checksums and class labels.
+- [ ] PostgreSQL backup, both application S3 buckets, and read access to the private S3 bucket holding the two dust model files. Get the expected SHA-256 checksums and class labels from the outgoing admin.
 
 ```mermaid
 flowchart LR
@@ -212,13 +212,23 @@ uv pip install 'numpy>=2.4.3' setuptools wheel
 uv sync --locked --no-build-isolation-package gdal
 ```
 
-Copy the dust weights from the secure handoff and compare both SHA-256 checksums. Confirm expected predictions on known labeled clips before enabling dust analysis for users.
+Ask the GravelRoad team for the private S3 bucket name, the folder and filenames for both models, and read access. From `FastAPI/`, use the AWS CLI and replace `MODEL_BUCKET`, `MODEL_FOLDER`, `DETECTOR_FILENAME`, and `CLASSIFIER_FILENAME` with the details the team provides. If the files are at the bucket root, remove `MODEL_FOLDER/` from both URLs.
 
 ```bash
-install -m 600 /secure/staging/yolo26l.pt ./yolo26l.pt
-install -m 600 /secure/staging/best_model_final.pt ./app/workers/dust/best_model_final.pt
-sha256sum yolo26l.pt app/workers/dust/best_model_final.pt
+model_dir=$(mktemp -d)
+aws s3 cp "s3://MODEL_BUCKET/MODEL_FOLDER/DETECTOR_FILENAME" "$model_dir/yolo26l.pt"
+aws s3 cp "s3://MODEL_BUCKET/MODEL_FOLDER/CLASSIFIER_FILENAME" "$model_dir/best_model_final.pt"
+sha256sum "$model_dir/yolo26l.pt" "$model_dir/best_model_final.pt"
 ```
+
+Compare both hashes with the expected checksums from the handoff. If both match, run these commands in the same shell. The app expects these destination paths even if the S3 filenames differ.
+
+```bash
+install -m 600 "$model_dir/yolo26l.pt" ./yolo26l.pt
+install -m 600 "$model_dir/best_model_final.pt" ./app/workers/dust/best_model_final.pt
+```
+
+Confirm expected predictions on known labeled clips before enabling dust analysis for users.
 
 If the model files are unavailable, record dust analysis as unavailable when handing over the deployment.
 
